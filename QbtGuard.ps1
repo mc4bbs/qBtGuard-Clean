@@ -26,6 +26,26 @@ function Get-MkvIssue([string]$Path) {
  } catch { return ('UNREADABLE: ' + $_.Exception.Message) }
  finally { if ($null -ne $stream) { $stream.Dispose() } }
 }
+function Test-NoReparsePoint([string]$Root, [string]$Candidate) {
+ # Reject links/junctions at any component, including the save directory itself.
+ # Fail closed if a path component cannot be inspected.
+ try {
+  $rootFull = [IO.Path]::GetFullPath($Root).TrimEnd([char]92, [char]47)
+  $candidateFull = [IO.Path]::GetFullPath($Candidate)
+  $prefix = $rootFull + [IO.Path]::DirectorySeparatorChar
+  if (-not $candidateFull.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase)) { return $false }
+  $walk = $candidateFull
+  while ($walk) {
+   $item = Get-Item -LiteralPath $walk -Force -ErrorAction Stop
+   if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) { return $false }
+   if ($walk.TrimEnd([char]92, [char]47) -ieq $rootFull) { return $true }
+   $parent = [IO.Path]::GetDirectoryName($walk.TrimEnd([char]92, [char]47))
+   if ([string]::IsNullOrWhiteSpace($parent) -or $parent -eq $walk) { return $false }
+   $walk = $parent
+  }
+ } catch { return $false }
+ return $false
+}
 function Resolve-TorrentFile($Torrent, [string]$Name) {
  if ([IO.Path]::IsPathRooted($Name) -or $Name -match '(^|[\\/])\.\.([\\/]|$)' -or $Name -match '^[a-zA-Z]:') { return $null }
  $root = [string]$Torrent.save_path
@@ -33,11 +53,11 @@ function Resolve-TorrentFile($Torrent, [string]$Name) {
  $rootFull = [IO.Path]::GetFullPath($root).TrimEnd([char]92) + [char]92
  $candidate = [IO.Path]::GetFullPath((Join-Path $root ($Name -replace '/', '\')))
  if (-not $candidate.StartsWith($rootFull, [StringComparison]::OrdinalIgnoreCase)) { return $null }
- if (Test-Path -LiteralPath $candidate -PathType Leaf) { return $candidate }
+ if ((Test-Path -LiteralPath $candidate -PathType Leaf) -and (Test-NoReparsePoint $root $candidate)) { return $candidate }
  $content = [string]$Torrent.content_path
  if (-not [string]::IsNullOrWhiteSpace($content) -and [IO.Path]::GetFileName($content) -ieq [IO.Path]::GetFileName($Name) -and (Test-Path -LiteralPath $content -PathType Leaf)) {
   $full = [IO.Path]::GetFullPath($content)
-  if ($full.StartsWith($rootFull, [StringComparison]::OrdinalIgnoreCase)) { return $full }
+  if ($full.StartsWith($rootFull, [StringComparison]::OrdinalIgnoreCase) -and (Test-NoReparsePoint $root $full)) { return $full }
  }
  return $null
 }
