@@ -1,0 +1,31 @@
+{
+  "QbtUrl": "http://127.0.0.1:8080",
+  "QbtUser": "your-qbittorrent-webui-user",
+  "BlockNoExtension": true,
+  "VerifyMkvSignatures": true,
+  "BlockedExtensions": [
+    ".exe",
+    ".scr",
+    ".com",
+    ".bat",
+    ".cmd",
+    ".msi",
+    ".msp",
+    ".ps1",
+    ".psm1",
+    ".vbs",
+    ".vbe",
+    ".js",
+    ".jse",
+    ".wsf",
+    ".wsh",
+    ".hta",
+    ".cpl",
+    ".pif",
+    ".lnk",
+    ".jar",
+    ".zipx"
+  ],
+  "AuditOnly": true,
+  "IntervalMinutes": 10
+}
