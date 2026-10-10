@@ -41,7 +41,7 @@ Describe 'qBtGuard mocked API behavior' {
         Mock Invoke-WebRequest { [pscustomobject]@{ Content='Fails.' } }
         Mock Invoke-RestMethod { throw 'Torrent API should not be called after failed login' }
         { & $engineScript -InstallPath $install } | Should Throw 'qBtGuard test: audit aborted'
-        (Get-Content -LiteralPath (Join-Path $install 'qbtguard.log') -Raw) | Should Match 'qBittorrent authentication failed'
+        (Get-Content -LiteralPath (Join-Path $install 'qbtguard.log') -Raw) | Should Match 'ERROR: audit failed'
         Assert-MockCalled Invoke-RestMethod -Times 0 -Exactly -Scope It
     }
 
@@ -49,15 +49,26 @@ Describe 'qBtGuard mocked API behavior' {
         Mock Invoke-WebRequest { throw 'Simulated connection refused' }
         Mock Invoke-RestMethod { throw 'Torrent API should not be called' }
         { & $engineScript -InstallPath $install } | Should Throw 'qBtGuard test: audit aborted'
-        (Get-Content -LiteralPath (Join-Path $install 'qbtguard.log') -Raw) | Should Match 'Simulated connection refused'
+        (Get-Content -LiteralPath (Join-Path $install 'qbtguard.log') -Raw) | Should Match 'ERROR: audit failed'
         Assert-MockCalled Invoke-RestMethod -Times 0 -Exactly -Scope It
+    }
+
+    It 'does not write simulated credential or API error details to the log' {
+        $secret = 'PRIVATE-TEST-PASSWORD-DO-NOT-LOG'
+        Mock Invoke-WebRequest { throw "Server error included $secret" }
+        Mock Invoke-RestMethod { throw 'Should not be reached' }
+        { & $engineScript -InstallPath $install } | Should Throw 'qBtGuard test: audit aborted'
+        $contents = Get-Content -LiteralPath (Join-Path $install 'qbtguard.log') -Raw
+        $contents | Should Match 'ERROR: audit failed'
+        $contents | Should Not Match $secret
+        $contents | Should Not Match 'STACK:'
     }
 
     It 'handles a torrent API failure after successful login' {
         Mock Invoke-WebRequest { [pscustomobject]@{ Content='Ok.' } }
         Mock Invoke-RestMethod { throw 'Simulated torrent API timeout' }
         { & $engineScript -InstallPath $install } | Should Throw 'qBtGuard test: audit aborted'
-        (Get-Content -LiteralPath (Join-Path $install 'qbtguard.log') -Raw) | Should Match 'Simulated torrent API timeout'
+        (Get-Content -LiteralPath (Join-Path $install 'qbtguard.log') -Raw) | Should Match 'ERROR: audit failed'
         Assert-MockCalled Invoke-RestMethod -Times 1 -Exactly -Scope It
     }
 }
