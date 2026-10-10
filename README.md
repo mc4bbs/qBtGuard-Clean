@@ -60,4 +60,4 @@ Please provide reproducible bug reports with sanitized logs and version numbers.
 
 ## License
 
-No license has been selected yet. Please do not assume permission to redistribute or modify until a LICENSE file is added.
+qBtGuard is released under the [MIT License](LICENSE). You may use, copy, modify, and redistribute it, including commercially, provided the copyright and license notices are retained.
