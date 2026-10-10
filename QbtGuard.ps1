@@ -1,6 +1,7 @@
 # qBtGuard 0.1.0-preview - read-only audit engine
 [CmdletBinding()]
-param([string]$InstallPath = $PSScriptRoot)
+param([string]$InstallPath)
+if ([string]::IsNullOrWhiteSpace($InstallPath)) { $InstallPath = Split-Path -Parent $PSCommandPath }
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $configFile = Join-Path $InstallPath 'config.json'
