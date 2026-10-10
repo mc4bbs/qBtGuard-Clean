@@ -66,7 +66,7 @@ try {
   $trigger = New-ScheduledTaskTrigger -Daily -At (Get-Date).AddMinutes(2)
   $trigger.Repetition.Interval = 'PT10M'
   $trigger.Repetition.Duration = 'P1D'
-  $principal = New-ScheduledTaskPrincipal -UserId ([Security.Principal.WindowsIdentity]::GetCurrent().Name) -LogonType Interactive -RunLevel LeastPrivilege
+  $principal = New-ScheduledTaskPrincipal -UserId ([Security.Principal.WindowsIdentity]::GetCurrent().Name) -LogonType Interactive -RunLevel Limited
   $settings = New-ScheduledTaskSettingsSet -MultipleInstances IgnoreNew -ExecutionTimeLimit (New-TimeSpan -Minutes 5)
   Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Description 'qBtGuard read-only audit; runs while user is logged on' -ErrorAction Stop | Out-Null
   $taskCreated = $true
