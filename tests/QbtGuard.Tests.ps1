@@ -11,7 +11,6 @@ foreach ($functionName in @('Get-MkvIssue','Resolve-TorrentFile')) {
 }
 
 Describe 'qBtGuard MKV header inspection' {
-    BeforeAll { } # Pester 3.4 compatibility: fixtures are created per test
     It 'accepts a valid EBML signature' {
         $p = Join-Path $TestDrive 'valid.mkv'
         [IO.File]::WriteAllBytes($p, [byte[]]@(0x1a,0x45,0xdf,0xa3,0,0,0,0))
