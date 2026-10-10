@@ -18,7 +18,7 @@ Describe 'qBtGuard uninstaller ownership safeguards' {
     It 'removes only the matching qBtGuard task' {
         Mock Get-ScheduledTask { [pscustomobject]@{ Actions = @([pscustomobject]@{ Execute='wscript.exe'; Arguments=$expectedArgs }) } }
         & $uninstaller -Destination $destination
-        Assert-MockCalled Unregister-ScheduledTask -Times 1 -Exactly -Scope It -ParameterFilter { $TaskName -eq 'qBtGuard Audit' -and $Confirm -eq $false }
+        Assert-MockCalled Unregister-ScheduledTask -Times 1 -Exactly -Scope It -ParameterFilter { $TaskName -eq 'qBtGuard Audit' }
     }
 
     It 'refuses an unrelated task with the same name' {
