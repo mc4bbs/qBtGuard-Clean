@@ -77,7 +77,7 @@ try {
  else { Write-Host "Scheduled task: $taskName (requires this Windows user to be logged on)." }
  Write-Host 'Run QbtGuard.ps1 manually and review qbtguard.log before relying on the audit.'
 } catch {
- Write-Error ("INSTALL FAILED: " + $_.Exception.Message)
+ Write-Host ("INSTALL FAILED: " + $_.Exception.Message) -ForegroundColor Red
  if ($taskCreated) { Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue }
  if ($installed -and (Test-Path -LiteralPath $destinationFull)) { Remove-Item -LiteralPath $destinationFull -Recurse -Force -ErrorAction SilentlyContinue }
  if ($staging -and (Test-Path -LiteralPath $staging)) { Remove-Item -LiteralPath $staging -Recurse -Force -ErrorAction SilentlyContinue }
