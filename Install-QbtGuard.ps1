@@ -31,7 +31,6 @@ try {
  if ([string]::IsNullOrWhiteSpace($url)) { $url = 'http://127.0.0.1:8080' }
  $uri = [uri]$url
  if (-not $uri.IsAbsoluteUri -or $uri.Scheme -notin @('http','https') -or $uri.UserInfo -or $uri.Query -or $uri.Fragment) { throw 'Invalid Web UI URL. Use http(s)://host:port without credentials, query or fragment.' }
- if ($uri.Scheme -eq 'http' -and $uri.Host -notin @('localhost','127.0.0.1','::1')) { throw 'Remote Web UI requires HTTPS. Do not send credentials over LAN HTTP.' }
  $user = Read-Host 'qBittorrent Web UI username'
  if ([string]::IsNullOrWhiteSpace($user)) { throw 'Username required.' }
  $pw = Read-Host 'qBittorrent Web UI password' -AsSecureString
