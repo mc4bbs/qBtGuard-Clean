@@ -76,7 +76,7 @@ try {
   }
  }
  Write-GuardLog ("AUDIT completed: files=$checked findings=$findings. No changes made.")
-} catch { Write-GuardLog ('ERROR: ' + $_.Exception.Message); exit 1 }
+} catch { Write-GuardLog ('ERROR: ' + $_.Exception.Message + ' | LINE: ' + $_.InvocationInfo.ScriptLineNumber + ' | STACK: ' + $_.ScriptStackTrace); exit 1 }
 finally {
  if ($null -ne $session -and $null -ne $headers -and $null -ne $uri) {
   try { Invoke-WebRequest -Uri ($uri.AbsoluteUri.TrimEnd('/') + '/api/v2/auth/logout') -Method Post -WebSession $session -Headers $headers -UseBasicParsing -ErrorAction Stop | Out-Null } catch {}
