@@ -64,8 +64,7 @@ try {
   $action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument $arguments
   # Daily trigger with one-day repetition avoids the 3650-day repetition-duration issue.
   $trigger = New-ScheduledTaskTrigger -Daily -At (Get-Date).AddMinutes(2)
-  $trigger.Repetition.Interval = 'PT10M'
-  $trigger.Repetition.Duration = 'P1D'
+  $trigger.Repetition = New-CimInstance -Namespace 'Root/Microsoft/Windows/TaskScheduler' -ClassName 'MSFT_TaskRepetitionPattern' -ClientOnly -Property @{ Interval = 'PT10M'; Duration = 'P1D'; StopAtDurationEnd = $false }
   $principal = New-ScheduledTaskPrincipal -UserId ([Security.Principal.WindowsIdentity]::GetCurrent().Name) -LogonType Interactive -RunLevel Limited
   $settings = New-ScheduledTaskSettingsSet -MultipleInstances IgnoreNew -ExecutionTimeLimit (New-TimeSpan -Minutes 5)
   Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Description 'qBtGuard read-only audit; runs while user is logged on' -ErrorAction Stop | Out-Null
