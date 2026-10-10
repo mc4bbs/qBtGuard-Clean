@@ -1,0 +1,8 @@
+# Local configuration, secrets, and logs
+config.json
+credential.dpapi
+*.log
+*.tmp
+*.bak
+*.zip
+.DS_Store
