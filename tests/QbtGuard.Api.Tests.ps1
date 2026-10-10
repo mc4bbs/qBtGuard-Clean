@@ -18,6 +18,17 @@ Describe 'qBtGuard mocked API behavior' {
             ConvertFrom-SecureString | Set-Content -LiteralPath (Join-Path $install 'credential.dpapi')
     }
 
+    It 'sets explicit timeouts on every audit HTTP request' {
+        $tokens = $null; $errors = $null
+        $ast = [System.Management.Automation.Language.Parser]::ParseFile($enginePath, [ref]$tokens, [ref]$errors)
+        $errors.Count | Should Be 0
+        $requests = @($ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.CommandAst] -and $n.GetCommandName() -in @('Invoke-WebRequest','Invoke-RestMethod') }, $true))
+        $requests.Count | Should Be 4
+        foreach ($request in $requests) {
+            $request.CommandElements.Extent.Text -join ' ' | Should Match '-TimeoutSec\\s+\\d+'
+        }
+    }
+
     It 'completes an empty audit without findings' {
         Mock Invoke-WebRequest { [pscustomobject]@{ Content='Ok.' } }
         Mock Invoke-RestMethod { @() }
