@@ -4,7 +4,7 @@ $engine = Join-Path (Split-Path -Parent $PSScriptRoot) 'QbtGuard.ps1'
 $tokens = $null; $parseErrors = $null
 $ast = [System.Management.Automation.Language.Parser]::ParseFile($engine, [ref]$tokens, [ref]$parseErrors)
 if ($parseErrors.Count -gt 0) { throw ('QbtGuard.ps1 parse errors: ' + ($parseErrors | Out-String)) }
-foreach ($functionName in @('Get-MkvIssue','Resolve-TorrentFile')) {
+foreach ($functionName in @('Get-MkvIssue','Test-NoReparsePoint','Resolve-TorrentFile')) {
     $definition = $ast.FindAll({ param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq $functionName }, $true) | Select-Object -First 1
     if (-not $definition) { throw "Missing function: $functionName" }
     . ([scriptblock]::Create($definition.Extent.Text))
@@ -45,6 +45,24 @@ Describe 'qBtGuard torrent path validation' {
         [IO.File]::WriteAllBytes($p, [byte[]]@(0x1a,0x45,0xdf,0xa3))
         $torrent = [pscustomobject]@{ save_path=$root; content_path='' }
         Resolve-TorrentFile $torrent 'Season 1/episode.mkv' | Should Be $p
+    }
+    It 'rejects a file marked as a symbolic link or junction' {
+        $root = Join-Path $TestDrive 'links'
+        New-Item -ItemType Directory -Path $root -Force | Out-Null
+        $p = Join-Path $root 'episode.mkv'
+        [IO.File]::WriteAllBytes($p, [byte[]]@(0x1a,0x45,0xdf,0xa3))
+        Mock Get-Item { [pscustomobject]@{ Attributes = [IO.FileAttributes]::ReparsePoint } }
+        $torrent = [pscustomobject]@{ save_path=$root; content_path='' }
+        Resolve-TorrentFile $torrent 'episode.mkv' | Should BeNullOrEmpty
+    }
+    It 'rejects an inaccessible path component rather than following it' {
+        $root = Join-Path $TestDrive 'inaccessible'
+        New-Item -ItemType Directory -Path $root -Force | Out-Null
+        $p = Join-Path $root 'episode.mkv'
+        [IO.File]::WriteAllBytes($p, [byte[]]@(0x1a,0x45,0xdf,0xa3))
+        Mock Get-Item { throw 'Simulated access denied' }
+        $torrent = [pscustomobject]@{ save_path=$root; content_path='' }
+        Resolve-TorrentFile $torrent 'episode.mkv' | Should BeNullOrEmpty
     }
     It 'rejects parent traversal with forward slashes' {
         $torrent = [pscustomobject]@{ save_path=$TestDrive; content_path='' }
