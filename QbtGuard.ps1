@@ -50,14 +50,14 @@ try {
  $secure = (Get-Content -LiteralPath (Join-Path $InstallPath 'credential.dpapi') -Raw).Trim() | ConvertTo-SecureString
  $credential = New-Object System.Management.Automation.PSCredential([string]$c.QbtUser, $secure)
  $headers = @{ Referer = ($uri.AbsoluteUri.TrimEnd('/') + '/'); Origin = $uri.GetLeftPart([UriPartial]::Authority) }
- $login = Invoke-WebRequest -Uri ($uri.AbsoluteUri.TrimEnd('/') + '/api/v2/auth/login') -Method Post -WebSession $session -Headers $headers -Body @{ username = [string]$c.QbtUser; password = $credential.GetNetworkCredential().Password } -UseBasicParsing -ErrorAction Stop
+ $login = Invoke-WebRequest -Uri ($uri.AbsoluteUri.TrimEnd('/') + '/api/v2/auth/login') -Method Post -WebSession $session -Headers $headers -Body @{ username = [string]$c.QbtUser; password = $credential.GetNetworkCredential().Password } -UseBasicParsing -TimeoutSec 15 -ErrorAction Stop
  if ($login.Content.Trim() -ne 'Ok.') { throw 'qBittorrent authentication failed.' }
- $torrents = @(Invoke-RestMethod -Uri ($uri.AbsoluteUri.TrimEnd('/') + '/api/v2/torrents/info') -WebSession $session -Headers $headers -ErrorAction Stop | ForEach-Object { $_ })
+ $torrents = @(Invoke-RestMethod -Uri ($uri.AbsoluteUri.TrimEnd('/') + '/api/v2/torrents/info') -WebSession $session -Headers $headers -TimeoutSec 30 -ErrorAction Stop | ForEach-Object { $_ })
  $blocked = @($c.BlockedExtensions | ForEach-Object { ([string]$_).ToLowerInvariant() })
  $checked = 0; $findings = 0
  foreach ($torrent in $torrents) {
   if ($null -eq $torrent -or -not $torrent.hash) { continue }
-  $files = @(Invoke-RestMethod -Uri ($uri.AbsoluteUri.TrimEnd('/') + '/api/v2/torrents/files?hash=' + [uri]::EscapeDataString([string]$torrent.hash)) -WebSession $session -Headers $headers -ErrorAction Stop | ForEach-Object { $_ })
+  $files = @(Invoke-RestMethod -Uri ($uri.AbsoluteUri.TrimEnd('/') + '/api/v2/torrents/files?hash=' + [uri]::EscapeDataString([string]$torrent.hash)) -WebSession $session -Headers $headers -TimeoutSec 30 -ErrorAction Stop | ForEach-Object { $_ })
   foreach ($file in $files) {
    if ($null -eq $file) { continue }
    $checked++
@@ -79,6 +79,6 @@ try {
 } catch { Write-GuardLog ('ERROR: ' + $_.Exception.Message + ' | LINE: ' + $_.InvocationInfo.ScriptLineNumber + ' | STACK: ' + $_.ScriptStackTrace); exit 1 }
 finally {
  if ($null -ne $session -and $null -ne $headers -and $null -ne $uri) {
-  try { Invoke-WebRequest -Uri ($uri.AbsoluteUri.TrimEnd('/') + '/api/v2/auth/logout') -Method Post -WebSession $session -Headers $headers -UseBasicParsing -ErrorAction Stop | Out-Null } catch {}
+  try { Invoke-WebRequest -Uri ($uri.AbsoluteUri.TrimEnd('/') + '/api/v2/auth/logout') -Method Post -WebSession $session -Headers $headers -UseBasicParsing -TimeoutSec 10 -ErrorAction Stop | Out-Null } catch {}
  }
 }
