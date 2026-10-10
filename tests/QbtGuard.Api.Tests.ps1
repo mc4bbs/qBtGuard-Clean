@@ -25,7 +25,7 @@ Describe 'qBtGuard mocked API behavior' {
         $requests = @($ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.CommandAst] -and $n.GetCommandName() -in @('Invoke-WebRequest','Invoke-RestMethod') }, $true))
         $requests.Count | Should Be 4
         foreach ($request in $requests) {
-            $request.CommandElements.Extent.Text -join ' ' | Should Match '-TimeoutSec\\s+\\d+'
+            $request.CommandElements.Extent.Text -join ' ' | Should Match '-TimeoutSec\s+\d+'
         }
     }
 
