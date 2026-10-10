@@ -29,7 +29,7 @@ function Resolve-TorrentFile($Torrent, [string]$Name) {
  if ([IO.Path]::IsPathRooted($Name) -or $Name -match '(^|[\\/])\.\.([\\/]|$)' -or $Name -match '^[a-zA-Z]:') { return $null }
  $root = [string]$Torrent.save_path
  if ([string]::IsNullOrWhiteSpace($root)) { return $null }
- $rootFull = [IO.Path]::GetFullPath($root).TrimEnd('\\') + '\\'
+ $rootFull = [IO.Path]::GetFullPath($root).TrimEnd([char]92) + [char]92
  $candidate = [IO.Path]::GetFullPath((Join-Path $root ($Name -replace '/', '\')))
  if (-not $candidate.StartsWith($rootFull, [StringComparison]::OrdinalIgnoreCase)) { return $null }
  if (Test-Path -LiteralPath $candidate -PathType Leaf) { return $candidate }
