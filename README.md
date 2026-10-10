@@ -10,7 +10,7 @@ qBtGuard is a Windows PowerShell utility for auditing torrents managed by qBitto
 
 - Windows 10/11, Windows PowerShell 5.1 and the ScheduledTasks module for scheduled operation.
 - qBittorrent Web UI enabled with API v2; first compatibility target is qBittorrent 4.3.6.
-- Local Web UI HTTP, or remote Web UI over HTTPS with a trusted certificate.
+- qBittorrent Web UI over HTTP or HTTPS. HTTP is supported on trusted LANs, but sends Web UI credentials and session data unencrypted. Do not expose an HTTP Web UI to the public Internet; use HTTPS or a secure tunnel for untrusted networks.
 - The scheduled-task account must be able to access downloads, including network shares.
 
 PIA is **not required** for this audit-only preview.
