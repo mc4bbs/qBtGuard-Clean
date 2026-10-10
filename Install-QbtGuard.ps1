@@ -53,6 +53,7 @@ try {
  $staging = Join-Path $parent ('.qBtGuard-staging-' + [guid]::NewGuid().ToString('N'))
  New-Item -ItemType Directory -Path $staging -ErrorAction Stop | Out-Null
  Copy-Item -LiteralPath $source -Destination (Join-Path $staging 'QbtGuard.ps1') -ErrorAction Stop
+  Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'Run-QbtGuard.vbs') -Destination (Join-Path $staging 'Run-QbtGuard.vbs') -ErrorAction Stop
  $config | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $staging 'config.json') -Encoding UTF8 -ErrorAction Stop
  $pw | ConvertFrom-SecureString | Set-Content -LiteralPath (Join-Path $staging 'credential.dpapi') -Encoding ASCII -ErrorAction Stop
  Move-Item -LiteralPath $staging -Destination $destinationFull -ErrorAction Stop
@@ -61,7 +62,7 @@ try {
  if (-not $NoTask) {
   $scriptPath = Join-Path $destinationFull 'QbtGuard.ps1'
   $arguments = '-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "' + $scriptPath + '"'
-  $action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument $arguments
+  $action = New-ScheduledTaskAction -Execute 'wscript.exe' -Argument ('//B //Nologo ' + [char]34 + (Join-Path $destinationFull 'Run-QbtGuard.vbs') + [char]34)
   # Daily trigger with one-day repetition avoids the 3650-day repetition-duration issue.
   $trigger = New-ScheduledTaskTrigger -Daily -At (Get-Date).AddMinutes(2)
   $trigger.Repetition = New-CimInstance -Namespace 'Root/Microsoft/Windows/TaskScheduler' -ClassName 'MSFT_TaskRepetitionPattern' -ClientOnly -Property @{ Interval = 'PT10M'; Duration = 'P1D'; StopAtDurationEnd = $false }
