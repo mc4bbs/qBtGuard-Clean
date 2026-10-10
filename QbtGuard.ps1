@@ -51,12 +51,12 @@ try {
  $headers = @{ Referer = ($uri.AbsoluteUri.TrimEnd('/') + '/'); Origin = $uri.GetLeftPart([UriPartial]::Authority) }
  $login = Invoke-WebRequest -Uri ($uri.AbsoluteUri.TrimEnd('/') + '/api/v2/auth/login') -Method Post -WebSession $session -Headers $headers -Body @{ username = [string]$c.QbtUser; password = $credential.GetNetworkCredential().Password } -UseBasicParsing -ErrorAction Stop
  if ($login.Content.Trim() -ne 'Ok.') { throw 'qBittorrent authentication failed.' }
- $torrents = @(Invoke-RestMethod -Uri ($uri.AbsoluteUri.TrimEnd('/') + '/api/v2/torrents/info') -WebSession $session -Headers $headers -ErrorAction Stop)
+ $torrents = @(Invoke-RestMethod -Uri ($uri.AbsoluteUri.TrimEnd('/') + '/api/v2/torrents/info') -WebSession $session -Headers $headers -ErrorAction Stop | ForEach-Object { $_ })
  $blocked = @($c.BlockedExtensions | ForEach-Object { ([string]$_).ToLowerInvariant() })
  $checked = 0; $findings = 0
  foreach ($torrent in $torrents) {
   if ($null -eq $torrent -or -not $torrent.hash) { continue }
-  $files = @(Invoke-RestMethod -Uri ($uri.AbsoluteUri.TrimEnd('/') + '/api/v2/torrents/files?hash=' + [uri]::EscapeDataString([string]$torrent.hash)) -WebSession $session -Headers $headers -ErrorAction Stop)
+  $files = @(Invoke-RestMethod -Uri ($uri.AbsoluteUri.TrimEnd('/') + '/api/v2/torrents/files?hash=' + [uri]::EscapeDataString([string]$torrent.hash)) -WebSession $session -Headers $headers -ErrorAction Stop | ForEach-Object { $_ })
   foreach ($file in $files) {
    if ($null -eq $file) { continue }
    $checked++
