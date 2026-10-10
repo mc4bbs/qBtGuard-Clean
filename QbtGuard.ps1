@@ -46,7 +46,6 @@ $uri = $null
 try {
  $uri = [uri]([string]$c.QbtUrl)
  if ($uri.Scheme -notin @('http','https')) { throw 'Web UI URL must use http or https.' }
- if ($uri.Scheme -ne 'https' -and @('localhost','127.0.0.1','::1') -notcontains $uri.Host) { throw 'Remote Web UI requires HTTPS.' }
  $secure = Get-Content -LiteralPath (Join-Path $InstallPath 'credential.dpapi') -Raw | ConvertTo-SecureString
  $credential = New-Object System.Management.Automation.PSCredential([string]$c.QbtUser, $secure)
  $headers = @{ Referer = ($uri.AbsoluteUri.TrimEnd('/') + '/'); Origin = $uri.GetLeftPart([UriPartial]::Authority) }
