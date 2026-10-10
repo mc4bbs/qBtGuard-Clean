@@ -46,7 +46,7 @@ $uri = $null
 try {
  $uri = [uri]([string]$c.QbtUrl)
  if ($uri.Scheme -notin @('http','https')) { throw 'Web UI URL must use http or https.' }
- $secure = Get-Content -LiteralPath (Join-Path $InstallPath 'credential.dpapi') -Raw | ConvertTo-SecureString
+ $secure = (Get-Content -LiteralPath (Join-Path $InstallPath 'credential.dpapi') -Raw).Trim() | ConvertTo-SecureString
  $credential = New-Object System.Management.Automation.PSCredential([string]$c.QbtUser, $secure)
  $headers = @{ Referer = ($uri.AbsoluteUri.TrimEnd('/') + '/'); Origin = $uri.GetLeftPart([UriPartial]::Authority) }
  $login = Invoke-WebRequest -Uri ($uri.AbsoluteUri.TrimEnd('/') + '/api/v2/auth/login') -Method Post -WebSession $session -Headers $headers -Body @{ username = [string]$c.QbtUser; password = $credential.GetNetworkCredential().Password } -UseBasicParsing -ErrorAction Stop
