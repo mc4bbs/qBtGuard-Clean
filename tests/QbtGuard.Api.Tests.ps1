@@ -23,7 +23,7 @@ Describe 'qBtGuard mocked API behavior' {
         Mock Invoke-RestMethod { @() }
         & $engineScript -InstallPath $install
         (Get-Content -LiteralPath (Join-Path $install 'qbtguard.log') -Raw) | Should Match 'AUDIT completed: files=0 findings=0'
-        Assert-MockCalled Invoke-RestMethod -Times 1 -Exactly
+        Assert-MockCalled Invoke-RestMethod -Times 1 -Exactly -Scope It
     }
 
     It 'rejects an incorrect Web UI password and records an error' {
@@ -31,7 +31,7 @@ Describe 'qBtGuard mocked API behavior' {
         Mock Invoke-RestMethod { throw 'Torrent API should not be called after failed login' }
         { & $engineScript -InstallPath $install } | Should Throw 'qBtGuard test: audit aborted'
         (Get-Content -LiteralPath (Join-Path $install 'qbtguard.log') -Raw) | Should Match 'qBittorrent authentication failed'
-        Assert-MockCalled Invoke-RestMethod -Times 0 -Exactly
+        Assert-MockCalled Invoke-RestMethod -Times 0 -Exactly -Scope It
     }
 
     It 'handles a Web UI server connection failure' {
@@ -39,7 +39,7 @@ Describe 'qBtGuard mocked API behavior' {
         Mock Invoke-RestMethod { throw 'Torrent API should not be called' }
         { & $engineScript -InstallPath $install } | Should Throw 'qBtGuard test: audit aborted'
         (Get-Content -LiteralPath (Join-Path $install 'qbtguard.log') -Raw) | Should Match 'Simulated connection refused'
-        Assert-MockCalled Invoke-RestMethod -Times 0 -Exactly
+        Assert-MockCalled Invoke-RestMethod -Times 0 -Exactly -Scope It
     }
 
     It 'handles a torrent API failure after successful login' {
@@ -47,6 +47,6 @@ Describe 'qBtGuard mocked API behavior' {
         Mock Invoke-RestMethod { throw 'Simulated torrent API timeout' }
         { & $engineScript -InstallPath $install } | Should Throw 'qBtGuard test: audit aborted'
         (Get-Content -LiteralPath (Join-Path $install 'qbtguard.log') -Raw) | Should Match 'Simulated torrent API timeout'
-        Assert-MockCalled Invoke-RestMethod -Times 1 -Exactly
+        Assert-MockCalled Invoke-RestMethod -Times 1 -Exactly -Scope It
     }
 }
