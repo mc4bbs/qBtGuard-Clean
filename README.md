@@ -26,7 +26,7 @@ PIA is **not required** for this audit-only preview.
    `powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$env:LOCALAPPDATA\qBtGuard\QbtGuard.ps1"`
 6. Inspect `%LOCALAPPDATA%\qBtGuard\qbtguard.log`.
 
-The `qBtGuard Audit` scheduled task repeats every 10 minutes **while the installing Windows user is logged in**. Run the installer with `-NoTask` to omit scheduling. DPAPI credentials cannot generally be decrypted from a different user account.
+The `qBtGuard Audit` scheduled task repeats every 10 minutes **while the installing Windows user is logged in**. It launches `Run-QbtGuard.vbs` through `wscript.exe` (`//B //Nologo`), which runs the PowerShell audit with its console window hidden. The scheduled audit writes results to `qbtguard.log` rather than displaying a console window. The installer must be kept alongside `Run-QbtGuard.vbs` and `QbtGuard.ps1` in the extracted source directory. Run the installer with `-NoTask` to omit scheduling. DPAPI credentials cannot generally be decrypted from a different user account.
 
 ## Uninstall
 
