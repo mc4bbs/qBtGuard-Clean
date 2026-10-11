@@ -34,6 +34,13 @@ Describe 'qBtGuard MKV header inspection' {
     It 'reports missing files as unreadable without modifying anything' {
         Get-MkvIssue (Join-Path $TestDrive 'missing.mkv') | Should Match '^UNREADABLE:'
     }
+    It 'does not expose a missing file path in the unreadable finding' {
+        $p = Join-Path $TestDrive 'PRIVATE-LOCATION-DO-NOT-LOG.mkv'
+        $issue = Get-MkvIssue $p
+        $issue | Should Match '^UNREADABLE:'
+        $issue | Should Not Match 'PRIVATE-LOCATION-DO-NOT-LOG'
+        $issue | Should Not Match ([regex]::Escape($TestDrive))
+    }
 }
 
 Describe 'qBtGuard torrent path validation' {
