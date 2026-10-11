@@ -1,6 +1,6 @@
 # qBtGuard — 0.1.0 preview
 
-**Status: experimental, read-only auditor. Not yet validated on independent Windows installations.**
+**Status: experimental, read-only auditor. Validated on one Windows installation; independent clean-VM testing remains outstanding.**
 
 qBtGuard is a Windows PowerShell utility for auditing torrents managed by qBittorrent. It reports potentially dangerous file extensions, extensionless files, and completed `.mkv` files that do not begin with the EBML container signature.
 
@@ -26,11 +26,11 @@ PIA is **not required** for this audit-only preview.
    `powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$env:LOCALAPPDATA\qBtGuard\QbtGuard.ps1"`
 6. Inspect `%LOCALAPPDATA%\qBtGuard\qbtguard.log`.
 
-The `qBtGuard Audit` scheduled task repeats every 10 minutes **while the installing Windows user is logged in**. It launches `Run-QbtGuard.vbs` through `wscript.exe` (`//B //Nologo`), which runs the PowerShell audit with its console window hidden. The scheduled audit writes results to `qbtguard.log` rather than displaying a console window. The installer must be kept alongside `Run-QbtGuard.vbs` and `QbtGuard.ps1` in the extracted source directory. Run the installer with `-NoTask` to omit scheduling. DPAPI credentials cannot generally be decrypted from a different user account.
+The `qBtGuard Audit` scheduled task repeats every 10 minutes **while the installing Windows user is logged in**. It launches `Run-QbtGuard.vbs` through `wscript.exe` (`//B //Nologo`), which runs the PowerShell audit with its console window hidden. The scheduled audit writes results to `qbtguard.log` rather than displaying a console window. The installer must be kept alongside `Run-QbtGuard.vbs` and `QbtGuard.ps1` in the extracted source directory. Run the installer with `-NoTask` to omit scheduling. The installer refuses to create a task if a task named `qBtGuard Audit` already exists; it does not replace the existing task. DPAPI credentials cannot generally be decrypted from a different user account.
 
 ## Uninstall
 
-Run `powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Uninstall-QbtGuard.ps1` from the extracted source directory. The scheduled task is removed; the installed directory, settings and logs are retained for inspection. Downloads are never touched.
+Run `powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Uninstall-QbtGuard.ps1` from the extracted source directory. The uninstaller removes a `qBtGuard Audit` task only when its launcher matches the specified installation directory; otherwise it refuses to remove it. The installed directory, settings and logs are retained for inspection. Downloads are never touched.
 
 ## Security limitations
 
@@ -38,14 +38,22 @@ Run `powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Uninstall-QbtGuar
 - An EBML header check does not establish that a file is playable or safe.
 - MKV header checks apply only to files the API reports complete. Missing files are reported as unavailable.
 - Blocked extensions are reported even if the torrent is incomplete.
-- Logs can contain torrent and file names: treat logs as private.
+- Logs can contain torrent and file names: treat logs as private. MKV file-read failures use a generic error message instead of logging raw filesystem exceptions.
 - Secure your qBittorrent Web UI; do not expose it directly to the public Internet.
 - The preview has **not** yet been tested on a clean Windows VM, additional qBittorrent versions, alternate PIA versions, or all UNC path arrangements.
 
+## Validation completed on the initial Windows test system
+
+- 26 Pester 3.4.0 regression tests passed, covering mocked API failures, MKV headers, log privacy, path safety, read-only safeguards, and uninstaller task ownership.
+- A clean installation using `-NoTask` authenticated successfully and completed a read-only audit of 3,638 files with zero findings.
+- The VBScript launcher ran invisibly and wrote a successful audit completion entry.
+- An existing scheduled task was observed running at approximately 10-minute intervals with successful completion logs. **This does not independently validate task creation by the installer.**
+- A Gitleaks scan of the cloned repository history reported no detected leaks. Automated scanning does not guarantee the absence of secrets.
+
 ## Development roadmap
 
-- Validate PowerShell syntax and installer behavior on a clean Windows VM.
-- Add mocked API regression tests, including nested files, path traversal, network failures, and authentication errors.
+- Validate PowerShell syntax and installer task-registration behavior on a clean Windows VM.
+- Expand regression tests for additional edge cases.
 - Verify qBittorrent 4.3.6 and newer versions separately.
 - Add opt-in PIA integration only after VPN-interface binding and failure-mode tests.
 - Consider deletion only with explicit opt-in, clear safeguards, and recovery procedures.
