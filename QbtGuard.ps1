@@ -23,7 +23,7 @@ function Get-MkvIssue([string]$Path) {
   if ($bytes[0] -eq 0x1a -and $bytes[1] -eq 0x45 -and $bytes[2] -eq 0xdf -and $bytes[3] -eq 0xa3) { return $null }
   if ($bytes[0] -eq 0x4d -and $bytes[1] -eq 0x5a) { return 'Windows MZ executable header' }
   return ('Not an EBML header: ' + [BitConverter]::ToString($bytes, 0, [Math]::Min($count, 12)))
- } catch { return ('UNREADABLE: ' + $_.Exception.Message) }
+ } catch { return 'UNREADABLE: file could not be opened or read' }
  finally { if ($null -ne $stream) { $stream.Dispose() } }
 }
 function Test-NoReparsePoint([string]$Root, [string]$Candidate) {
