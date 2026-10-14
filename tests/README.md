@@ -1,12 +1,11 @@
-# Test plan (not yet automated)
+# Windows QA
 
-The preview is **not validated on other machines**. Before public release, test on a clean Windows 10/11 VM with qBittorrent 4.3.6 and Web UI API v2.
+Run in Windows PowerShell 5.1 with Pester 4.10.1:
 
-1. Installation with and without a scheduled task; repeat installation; uninstallation.
-2. Correct DPAPI authentication and wrong password, server unavailable, TLS failure.
-3. Completed and incomplete torrents, nested directories, extensionless and prohibited files.
-4. Valid EBML header, invalid header, unreadable file, missing UNC share.
-5. Path traversal attempts, including absolute paths, dot-dot segments and alternate separators.
-6. Scheduled task running under the intended user and while logged out.
-7. Verify no delete, PIA, or qBittorrent lifecycle actions occur.
-8. Scan all source and commit history for secrets before changing visibility to public.
+```powershell
+Import-Module Pester -RequiredVersion 4.10.1; Invoke-Pester -Script .\tests
+```
+
+Tests use disposable local fixtures, DPAPI test credentials and mocked API/process/VPN/task commands. They never contact real qBittorrent or PIA. They cover path traversal and reparse points, header findings/privacy, API failure handling, shared audit action gating, deletion policy and hash targeting, disabled/unhealthy restart, remote-local separation, forwarding-port validation and recovery cooldown.
+
+CI checks syntax and runs these tests on Windows. Real VPN/interface/profile behavior, clean installation, scheduler registration and destructive policies still require isolated Windows integration QA using disposable downloads. A mocked test pass is not permission to deploy enforcement.
