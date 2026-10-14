@@ -46,8 +46,8 @@ function Test-LocalEndpoint([uri]$Address) {
  return ($resolved.Count -gt 0 -and @($resolved | Where-Object { $_ -notin $local }).Count -eq 0)
 }
 function Test-VpnReady {
- if ((Invoke-Pia @('get','connectionstate')) -ne 'Connected') { return $false }
- $vpnIP = Invoke-Pia @('get','vpnip')
+ if ((Invoke-Pia -Arguments @('get','connectionstate')) -ne 'Connected') { return $false }
+ $vpnIP = Invoke-Pia -Arguments @('get','vpnip')
  $ip = $null
  if (-not [Net.IPAddress]::TryParse($vpnIP, [ref]$ip)) { return $false }
  $addresses = @(Get-NetIPAddress -ErrorAction Stop | Where-Object { $_.IPAddress -eq $vpnIP })
@@ -67,18 +67,18 @@ function Test-StartupBinding {
  return ($binding -eq [string](Get-Setting 'VpnInterface' '') -and $binding -ne '')
 }
 function Invoke-QbtApi([string]$Endpoint, [string]$Method = 'Get', $Body = $null) {
- $args = @{ Uri=($baseUrl + '/api/v2/' + $Endpoint); Method=$Method; WebSession=$session; Headers=$headers; TimeoutSec=30; ErrorAction='Stop' }
- if ($null -ne $Body) { $args.Body = $Body }
- Invoke-RestMethod @args
+ $requestArgs = @{ Uri=($baseUrl + '/api/v2/' + $Endpoint); Method=$Method; WebSession=$session; Headers=$headers; TimeoutSec=30; ErrorAction='Stop' }
+ if ($null -ne $Body) { $requestArgs.Body = $Body }
+ Invoke-RestMethod @requestArgs
 }
 function Get-ForwardedPort {
- $output = Invoke-Pia @('get','portforward')
+ $output = Invoke-Pia -Arguments @('get','portforward')
  if ($output -match '^\d{1,5}$' -and [int]$output -ge 1 -and [int]$output -le 65535) { return [int]$output }
  return $null
 }
 function Invoke-VpnRecovery {
- $state = Invoke-Pia @('get','connectionstate')
- $portState = Invoke-Pia @('get','portforward')
+ $state = Invoke-Pia -Arguments @('get','connectionstate')
+ $portState = Invoke-Pia -Arguments @('get','portforward')
  if ($state -eq 'Connected' -and $portState -ne 'Failed') { return }
  if (-not (Get-Setting 'EnableVpnRecovery' $false)) { Write-GuardLog "NOTICE VPN recovery disabled; state=$state port=$portState"; return }
  $statePath = Join-Path $InstallPath 'region-state.json'
@@ -91,18 +91,18 @@ function Invoke-VpnRecovery {
  $regions = @(Get-Setting 'PiaRegions' @())
  if ($regions.Count -lt 2) { throw 'Configure at least two PIA region IDs.' }
  foreach ($region in $regions) { if ([string]$region -notmatch '^[a-z0-9]+(?:-[a-z0-9]+)*$') { throw 'Invalid PIA region ID.' } }
- $current = Invoke-Pia @('get','region')
+ $current = Invoke-Pia -Arguments @('get','region')
  $index = [Array]::IndexOf($regions, $current)
  $next = [string]$regions[(($index + 1) % $regions.Count)]
  $changed = Invoke-GuardAction "switch PIA region to $next and reconnect" {
   @{LastAttemptUtc=[DateTimeOffset]::UtcNow.ToString('o')} | ConvertTo-Json | Set-Content -LiteralPath $statePath -Encoding UTF8
-  Invoke-Pia @('set','region',$next) | Out-Null
-  Invoke-Pia @('connect') | Out-Null
+  Invoke-Pia -Arguments @('set','region',$next) | Out-Null
+  Invoke-Pia -Arguments @('connect') | Out-Null
  }
  if (-not $changed) { return }
  $deadline = [DateTime]::UtcNow.AddSeconds(120)
  do {
-  if ((Invoke-Pia @('get','region')) -eq $next -and (Test-VpnReady) -and $null -ne (Get-ForwardedPort)) { Write-GuardLog 'VPN recovery verified'; return }
+  if ((Invoke-Pia -Arguments @('get','region')) -eq $next -and (Test-VpnReady) -and $null -ne (Get-ForwardedPort)) { Write-GuardLog 'VPN recovery verified'; return }
   Start-Sleep -Seconds 5
  } while ([DateTime]::UtcNow -lt $deadline)
  throw 'VPN recovery did not become ready within 120 seconds.'
