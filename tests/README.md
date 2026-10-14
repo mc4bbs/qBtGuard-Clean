@@ -1,9 +1,9 @@
 # Windows QA
 
-Run in Windows PowerShell 5.1 with Pester 4.10.1:
+Run in Windows PowerShell 5.1 with Pester 3.4.0:
 
 ```powershell
-Import-Module Pester -RequiredVersion 4.10.1; Invoke-Pester -Script .\tests
+Import-Module Pester -RequiredVersion 3.4.0; Invoke-Pester -Script .\tests
 ```
 
 Tests use disposable local fixtures, DPAPI test credentials and mocked API/process/VPN/task commands. They never contact real qBittorrent or PIA. They cover path traversal and reparse points, header findings/privacy, API failure handling, shared audit action gating, deletion policy and hash targeting, disabled/unhealthy restart, remote-local separation, forwarding-port validation and recovery cooldown.
