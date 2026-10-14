@@ -3,7 +3,7 @@ $engine = Join-Path (Split-Path -Parent $PSScriptRoot) 'QbtGuard.ps1'
 $tokens=$null; $errors=$null
 $ast=[Management.Automation.Language.Parser]::ParseFile($engine,[ref]$tokens,[ref]$errors)
 if ($errors.Count) { throw ($errors | Out-String) }
-foreach ($name in @('Get-Setting','Invoke-GuardAction','Test-LocalEndpoint','Test-VpnReady','Test-StartupBinding','Get-ForwardedPort','Invoke-VpnRecovery','Ensure-QbtRunning')) {
+foreach ($name in @('Get-Setting','Invoke-GuardAction','Test-LocalEndpoint','Test-VpnReady','Get-SavedBinding','Test-StartupBinding','Test-LiveBinding','Get-ForwardedPort','Invoke-VpnRecovery','Ensure-QbtRunning')) {
  $definition=$ast.FindAll({param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq $name},$true) | Select-Object -First 1
  . ([scriptblock]::Create($definition.Extent.Text))
 }
@@ -146,5 +146,34 @@ Describe 'VPN exit IP and local tunnel readiness' {
  It 'rejects an invalid PIA exit address' {
   Mock Invoke-Pia { if ($Arguments[1] -eq 'connectionstate') { 'Connected' } else { 'Unknown' } }
   Test-VpnReady | Should Be $false
+ }
+}
+
+Describe 'Windows qBittorrent interface name and ID' {
+ BeforeEach {
+  $path=Join-Path $TestDrive 'windows-binding.ini'
+  @('Connection\InterfaceName=test-tunnel','Connection\Interface=iftype53_12345') | Set-Content $path
+  $c=[pscustomobject]@{QbtSettingsPath=$path;VpnInterface='test-tunnel'}
+ }
+ It 'accepts a matching saved display name with a distinct internal ID' {
+  Test-StartupBinding | Should Be $true
+ }
+ It 'compares the live API binding to the saved internal ID' {
+  Test-LiveBinding ([pscustomobject]@{current_network_interface='iftype53_12345'}) | Should Be $true
+ }
+ It 'rejects an unrelated live internal ID' {
+  Test-LiveBinding ([pscustomobject]@{current_network_interface='iftype53_99999'}) | Should Be $false
+ }
+ It 'rejects a saved name that does not match the configured adapter' {
+  $c.VpnInterface='different-tunnel'
+  Test-StartupBinding | Should Be $false
+ }
+ It 'rejects a name without an internal ID' {
+  'Connection\InterfaceName=test-tunnel' | Set-Content $path
+  Test-StartupBinding | Should Be $false
+ }
+ It 'rejects duplicate binding names' {
+  'Connection\InterfaceName=another-tunnel' | Add-Content $path
+  Test-StartupBinding | Should Be $false
  }
 }

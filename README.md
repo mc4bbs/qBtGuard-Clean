@@ -16,8 +16,8 @@ Set `AuditOnly: false` only after QA and enable each desired action separately. 
 | `EnableVpnRecovery` | Rotate configured PIA regions after disconnection or explicit forwarding failure |
 | `EnablePortSync` | Apply and verify PIA's forwarded port |
 | `EnableQbtRestart` | Start a missing local process after VPN and saved profile binding checks |
-| `VpnInterface` | Exact local VPN adapter name; must also match the live qBittorrent interface preference |
-| `QbtSettingsPath` | Intended user's qBittorrent INI file; restart requires its `Connection\Interface` value to match |
+| `VpnInterface` | Exact local VPN adapter name; must match the saved display name; the live qBittorrent binding is checked against its saved internal ID |
+| `QbtSettingsPath` | Intended user's qBittorrent INI file; restart requires its saved interface name (or legacy alias) to match; the live API must match the saved internal ID |
 | `PiaCtl`, `QbtExe`, `QbtProcessName` | Local installation paths and process name |
 | `PiaRegions`, `RegionCooldownMinutes` | User-selected region IDs and persistent recovery cooldown |
 | `BlockNoExtension`, `BlockedExtensions` | File-name inspection policy |

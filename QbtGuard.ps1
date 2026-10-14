@@ -59,15 +59,29 @@ function Test-VpnReady {
   Where-Object { $_.AddressState -eq 'Preferred' -and $_.IPAddress -notlike '169.254.*' -and $_.IPAddress -notlike '127.*' -and $_.IPAddress -ne '0.0.0.0' })
  return ($addresses.Count -gt 0)
 }
-function Test-StartupBinding {
- # Read the intended qBittorrent profile before allowing a process start.
+function Get-SavedBinding {
  $path = [string](Get-Setting 'QbtSettingsPath' '')
- if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { return $false }
+ $expected = [string](Get-Setting 'VpnInterface' '')
+ if ([string]::IsNullOrWhiteSpace($expected) -or -not (Test-Path -LiteralPath $path -PathType Leaf)) { return $null }
  $ini = Get-Content -LiteralPath $path
- $bindings = @($ini | Where-Object { $_ -match '^Connection\\Interface=' })
- if ($bindings.Count -ne 1) { return $false }
- $binding = ($bindings[0] -split '=',2)[1].Trim()
- return ($binding -eq [string](Get-Setting 'VpnInterface' '') -and $binding -ne '')
+ $ids = @($ini | Where-Object { $_ -match '^Connection\\Interface=' })
+ $names = @($ini | Where-Object { $_ -match '^Connection\\InterfaceName=' })
+ if ($ids.Count -ne 1 -or $names.Count -gt 1) { return $null }
+ $id = ($ids[0] -split '=',2)[1].Trim()
+ if ([string]::IsNullOrWhiteSpace($id)) { return $null }
+ # Windows qBittorrent saves a display name separately from its internal ID.
+ $name = $id
+ if ($names.Count -eq 1) { $name = ($names[0] -split '=',2)[1].Trim() }
+ if ($name -ne $expected) { return $null }
+ return [pscustomobject]@{ Name=$name; Id=$id }
+}
+function Test-StartupBinding {
+ return ($null -ne (Get-SavedBinding))
+}
+function Test-LiveBinding($Preferences) {
+ $saved = Get-SavedBinding
+ if ($null -eq $saved) { return $false }
+ return ([string]$Preferences.current_network_interface -eq $saved.Id)
 }
 function Invoke-QbtApi([string]$Endpoint, [string]$Method = 'Get', $Body = $null) {
  $requestArgs = @{ Uri=($baseUrl + '/api/v2/' + $Endpoint); Method=$Method; WebSession=$session; Headers=$headers; TimeoutSec=30; ErrorAction='Stop' }
@@ -225,7 +239,7 @@ try {
  $stage = 'preferences'
  if ($piaEnabled) {
   $prefs = Invoke-QbtApi 'app/preferences'
-  if ([string]$prefs.current_network_interface -ne [string](Get-Setting 'VpnInterface' '')) { throw 'Live qBittorrent VPN interface binding mismatch.' }
+  if (-not (Test-LiveBinding $prefs)) { throw 'Live qBittorrent VPN interface binding mismatch.' }
   if (Get-Setting 'EnablePortSync' $false) {
    $port = Get-ForwardedPort
    if ($null -ne $port -and [int]$prefs.listen_port -ne $port) {
