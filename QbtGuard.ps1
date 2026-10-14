@@ -47,14 +47,17 @@ function Test-LocalEndpoint([uri]$Address) {
 }
 function Test-VpnReady {
  if ((Invoke-Pia -Arguments @('get','connectionstate')) -ne 'Connected') { return $false }
- $vpnIP = Invoke-Pia -Arguments @('get','vpnip')
- $ip = $null
- if (-not [Net.IPAddress]::TryParse($vpnIP, [ref]$ip)) { return $false }
- $addresses = @(Get-NetIPAddress -ErrorAction Stop | Where-Object { $_.IPAddress -eq $vpnIP })
- if ($addresses.Count -ne 1) { return $false }
- $adapter = Get-NetAdapter -InterfaceIndex $addresses[0].InterfaceIndex -ErrorAction Stop
+ # PIA vpnip is the public exit IP, not the adapter's private tunnel address.
+ $exitIP = $null
+ if (-not [Net.IPAddress]::TryParse((Invoke-Pia -Arguments @('get','vpnip')), [ref]$exitIP)) { return $false }
+ if ([Net.IPAddress]::IsLoopback($exitIP) -or $exitIP.Equals([Net.IPAddress]::Any) -or $exitIP.Equals([Net.IPAddress]::IPv6Any)) { return $false }
  $expected = [string](Get-Setting 'VpnInterface' '')
- return ($adapter.Status -eq 'Up' -and -not [string]::IsNullOrWhiteSpace($expected) -and $adapter.Name -eq $expected)
+ if ([string]::IsNullOrWhiteSpace($expected)) { return $false }
+ $adapters = @(Get-NetAdapter -ErrorAction Stop | Where-Object { $_.Name -eq $expected })
+ if ($adapters.Count -ne 1 -or $adapters[0].Status -ne 'Up') { return $false }
+ $addresses = @(Get-NetIPAddress -InterfaceIndex $adapters[0].InterfaceIndex -AddressFamily IPv4 -ErrorAction Stop |
+  Where-Object { $_.AddressState -eq 'Preferred' -and $_.IPAddress -notlike '169.254.*' -and $_.IPAddress -notlike '127.*' -and $_.IPAddress -ne '0.0.0.0' })
+ return ($addresses.Count -gt 0)
 }
 function Test-StartupBinding {
  # Read the intended qBittorrent profile before allowing a process start.

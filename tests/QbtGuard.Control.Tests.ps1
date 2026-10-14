@@ -111,3 +111,40 @@ Describe 'Saved startup binding' {
   Test-StartupBinding | Should Be $false
  }
 }
+
+Describe 'VPN exit IP and local tunnel readiness' {
+ BeforeEach {
+  $c=[pscustomobject]@{VpnInterface='test-tunnel'}
+  Mock Invoke-Pia { if ($Arguments[1] -eq 'connectionstate') { 'Connected' } else { '203.0.113.8' } }
+  Mock Get-NetAdapter { @([pscustomobject]@{Name='test-tunnel';Status='Up';InterfaceIndex=42}) }
+  Mock Get-NetIPAddress { @([pscustomobject]@{IPAddress='10.8.0.2';AddressState='Preferred'}) }
+ }
+ It 'accepts a private tunnel IP different from the public VPN exit IP' {
+  Test-VpnReady | Should Be $true
+  Assert-MockCalled Get-NetIPAddress -Times 1 -Exactly -Scope It -ParameterFilter { $InterfaceIndex -eq 42 -and $AddressFamily -eq 'IPv4' }
+ }
+ It 'rejects a disconnected VPN even when the adapter is up' {
+  Mock Invoke-Pia { 'Reconnecting' }
+  Test-VpnReady | Should Be $false
+ }
+ It 'rejects a down configured adapter' {
+  Mock Get-NetAdapter { @([pscustomobject]@{Name='test-tunnel';Status='Disconnected';InterfaceIndex=42}) }
+  Test-VpnReady | Should Be $false
+ }
+ It 'rejects a missing configured adapter' {
+  Mock Get-NetAdapter { @() }
+  Test-VpnReady | Should Be $false
+ }
+ It 'rejects an adapter with only a link local address' {
+  Mock Get-NetIPAddress { @([pscustomobject]@{IPAddress='169.254.1.2';AddressState='Preferred'}) }
+  Test-VpnReady | Should Be $false
+ }
+ It 'rejects an unready tunnel address' {
+  Mock Get-NetIPAddress { @([pscustomobject]@{IPAddress='10.8.0.2';AddressState='Tentative'}) }
+  Test-VpnReady | Should Be $false
+ }
+ It 'rejects an invalid PIA exit address' {
+  Mock Invoke-Pia { if ($Arguments[1] -eq 'connectionstate') { 'Connected' } else { 'Unknown' } }
+  Test-VpnReady | Should Be $false
+ }
+}
