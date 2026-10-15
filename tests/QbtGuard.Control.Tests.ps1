@@ -143,9 +143,10 @@ Describe 'VPN exit IP and local tunnel readiness' {
   Mock Get-NetIPAddress { @([pscustomobject]@{IPAddress='10.8.0.2';AddressState='Tentative'}) }
   Test-VpnReady | Should Be $false
  }
- It 'rejects an invalid PIA exit address' {
+ It 'accepts healthy tunnel checks when public exit IP telemetry would be Unknown' {
   Mock Invoke-Pia { if ($Arguments[1] -eq 'connectionstate') { 'Connected' } else { 'Unknown' } }
-  Test-VpnReady | Should Be $false
+  Test-VpnReady | Should Be $true
+  Assert-MockCalled Invoke-Pia -Times 0 -Exactly -Scope It -ParameterFilter { $Arguments[1] -eq 'vpnip' }
  }
 }
 
@@ -175,5 +176,37 @@ Describe 'Windows qBittorrent interface name and ID' {
  It 'rejects duplicate binding names' {
   'Connection\InterfaceName=another-tunnel' | Add-Content $path
   Test-StartupBinding | Should Be $false
+ }
+}
+
+Describe 'VPN readiness fail-closed diagnostics' {
+ BeforeEach {
+  $c=[pscustomobject]@{VpnInterface='test-tunnel'}
+  Mock Write-GuardLog {}
+  Mock Invoke-Pia { 'Connected' }
+  Mock Get-NetAdapter { @([pscustomobject]@{Name='test-tunnel';Status='Up';InterfaceIndex=42}) }
+  Mock Get-NetIPAddress { @([pscustomobject]@{IPAddress='10.8.0.2';AddressState='Preferred'}) }
+ }
+ It 'reports a disconnected VPN and blocks readiness' {
+  Mock Invoke-Pia { 'Reconnecting' }
+  Test-VpnReady | Should Be $false
+  Assert-MockCalled Write-GuardLog -Times 1 -Exactly -Scope It -ParameterFilter { $Message -match 'connection state is Reconnecting' }
+ }
+ It 'blocks readiness when the configured interface is empty' {
+  $c.VpnInterface=''
+  Test-VpnReady | Should Be $false
+  Assert-MockCalled Get-NetAdapter -Times 0 -Exactly -Scope It
+ }
+ It 'blocks readiness when only an unrelated Up adapter exists' {
+  Mock Get-NetAdapter { @([pscustomobject]@{Name='Ethernet';Status='Up';InterfaceIndex=2}) }
+  Test-VpnReady | Should Be $false
+ }
+ It 'fails when local adapter inspection throws' {
+  Mock Get-NetAdapter { throw 'adapter inspection failed' }
+  { Test-VpnReady } | Should Throw
+ }
+ It 'fails when local address inspection throws' {
+  Mock Get-NetIPAddress { throw 'address inspection failed' }
+  { Test-VpnReady } | Should Throw
  }
 }

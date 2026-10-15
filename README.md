@@ -24,7 +24,7 @@ Set `AuditOnly: false` only after QA and enable each desired action separately. 
 | `VerifyMkvSignatures` | Inspect completed local MKV headers |
 | `DeleteProhibitedTorrents`, `DeleteInvalidMkvTorrents` | Separate opt-in deletion policies |
 
-PIA integration is optional. With it enabled, the API endpoint must resolve exclusively to this machine. The tunnel must report Connected, report a valid public exit IP and have a Preferred, non-link-local IPv4 address on the configured Up adapter, and qBittorrent must report the configured interface binding. qBtGuard is **not a kill switch**: configure PIA's kill switch and qBittorrent's interface binding independently. It does not stop an already running qBittorrent if the tunnel fails. Recovery can take up to 120 seconds; the scheduler prevents concurrent scheduled instances and the engine locks each installation against concurrent manual runs.
+PIA integration is optional. With it enabled, the API endpoint must resolve exclusively to this machine. The tunnel must report Connected, have a Preferred, non-link-local IPv4 address on the configured Up adapter, and qBittorrent must report the configured interface binding. qBtGuard is **not a kill switch**: configure PIA's kill switch and qBittorrent's interface binding independently. It does not stop an already running qBittorrent if the tunnel fails. Recovery can take up to 120 seconds; the scheduler prevents concurrent scheduled instances and the engine locks each installation against concurrent manual runs.
 
 The first compatibility target is qBittorrent 4.3.6. Profile/interface naming, PIA behavior, x86/x64 paths and other versions require Windows validation. No user's addresses, credentials, logs, or preferred region list are embedded in the engine.
 
@@ -59,3 +59,7 @@ HTTP Web UI credentials are unencrypted in transit; use HTTPS or a trusted local
 ## License
 
 [MIT](LICENSE).
+
+### PIA public-IP discovery
+
+The VPN readiness gate uses PIA's Connected state and the configured Up adapter with a usable Preferred local IPv4 address. The saved and live qBittorrent interface bindings remain separately checked. Public exit-IP discovery (`piactl get vpnip`) is not a gate: a live integration test observed `Unknown` alongside Connected, a usable WireGuard tunnel and an assigned forwarded port. This change avoids blocking port synchronization on unavailable address telemetry; it does not independently prove end-to-end Internet reachability. PIA CLI failures and unavailable local tunnel checks still fail the cycle. VPN BLOCKED log messages identify unsuccessful readiness checks.

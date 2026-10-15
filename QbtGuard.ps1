@@ -47,18 +47,19 @@ function Test-LocalEndpoint([uri]$Address) {
  return ($resolved.Count -gt 0 -and @($resolved | Where-Object { $_ -notin $local }).Count -eq 0)
 }
 function Test-VpnReady {
- if ((Invoke-Pia -Arguments @('get','connectionstate')) -ne 'Connected') { return $false }
- # PIA vpnip is the public exit IP, not the adapter's private tunnel address.
- $exitIP = $null
- if (-not [Net.IPAddress]::TryParse((Invoke-Pia -Arguments @('get','vpnip')), [ref]$exitIP)) { return $false }
- if ([Net.IPAddress]::IsLoopback($exitIP) -or $exitIP.Equals([Net.IPAddress]::Any) -or $exitIP.Equals([Net.IPAddress]::IPv6Any)) { return $false }
+ $state = Invoke-Pia -Arguments @('get','connectionstate')
+ if ($state -ne 'Connected') { Write-GuardLog "VPN BLOCKED: PIA connection state is $state"; return $false }
+ # Public exit-IP discovery is telemetry, not the local tunnel readiness gate.
+ # PIA can return Unknown for vpnip while Connected with a usable tunnel.
  $expected = [string](Get-Setting 'VpnInterface' '')
- if ([string]::IsNullOrWhiteSpace($expected)) { return $false }
+ if ([string]::IsNullOrWhiteSpace($expected)) { Write-GuardLog 'VPN BLOCKED: VpnInterface is not configured'; return $false }
  $adapters = @(Get-NetAdapter -ErrorAction Stop | Where-Object { $_.Name -eq $expected })
- if ($adapters.Count -ne 1 -or $adapters[0].Status -ne 'Up') { return $false }
+ if ($adapters.Count -ne 1) { Write-GuardLog 'VPN BLOCKED: configured tunnel adapter was not uniquely found'; return $false }
+ if ($adapters[0].Status -ne 'Up') { Write-GuardLog 'VPN BLOCKED: configured tunnel adapter is not Up'; return $false }
  $addresses = @(Get-NetIPAddress -InterfaceIndex $adapters[0].InterfaceIndex -AddressFamily IPv4 -ErrorAction Stop |
   Where-Object { $_.AddressState -eq 'Preferred' -and $_.IPAddress -notlike '169.254.*' -and $_.IPAddress -notlike '127.*' -and $_.IPAddress -ne '0.0.0.0' })
- return ($addresses.Count -gt 0)
+ if ($addresses.Count -eq 0) { Write-GuardLog 'VPN BLOCKED: no usable Preferred IPv4 address on the configured tunnel'; return $false }
+ return $true
 }
 function Get-SavedBinding {
  $path = [string](Get-Setting 'QbtSettingsPath' '')
