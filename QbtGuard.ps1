@@ -8,7 +8,8 @@ $log = Join-Path $InstallPath 'qbtguard.log'
 function Write-GuardLog([string]$Message) {
  $clean = $Message -replace '[\r\n\x00-\x1f]', ' '
  Add-Content -LiteralPath $log -Value ('{0} {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $clean)
- Write-Output $clean
+ # Logging must not contaminate boolean function return values.
+ Write-Host $clean
 }
 function Get-Setting([string]$Name, $Default) {
  $property = $c.PSObject.Properties[$Name]
