@@ -63,3 +63,9 @@ HTTP Web UI credentials are unencrypted in transit; use HTTPS or a trusted local
 ### PIA public-IP discovery
 
 The VPN readiness gate uses PIA's Connected state and the configured Up adapter with a usable Preferred local IPv4 address. The saved and live qBittorrent interface bindings remain separately checked. Public exit-IP discovery (`piactl get vpnip`) is not a gate: a live integration test observed `Unknown` alongside Connected, a usable WireGuard tunnel and an assigned forwarded port. This change avoids blocking port synchronization on unavailable address telemetry; it does not independently prove end-to-end Internet reachability. PIA CLI failures and unavailable local tunnel checks still fail the cycle. VPN BLOCKED log messages identify unsuccessful readiness checks.
+
+### Asynchronous PIA recovery
+
+The recovery action waits up to 30 seconds for Disconnected before changing region. It then polls for a connected tunnel in the selected region and an assigned forwarded port. Connect requests are sent only from Disconnected, at least 15 seconds apart, with a maximum of four requests during 24 five-second polling intervals. A CLI success exit is treated as request acknowledgment, not proof of connection. Native-command overhead adds to the polling duration. Disconnect settling timeouts withhold the region/connect commands, and failures remain visible in the log. Audit mode performs no disconnects, region changes, connect requests or recovery waits.
+
+The live recovery test on the initial system required a manual reconnect and therefore did not establish unattended recovery. Subsequent live testing must have an independent local reconnect fallback prepared before disconnecting the VPN; the kill switch can block the chat connection. Keep production protection restored between tests.

@@ -113,19 +113,45 @@ function Invoke-VpnRecovery {
  $current = Invoke-Pia -Arguments @('get','region')
  $index = [Array]::IndexOf($regions, $current)
  $next = [string]$regions[(($index + 1) % $regions.Count)]
- $changed = Invoke-GuardAction "switch PIA region to $next and reconnect" {
+ $changed = Invoke-GuardAction "prepare PIA region recovery to $next" {
   @{LastAttemptUtc=[DateTimeOffset]::UtcNow.ToString('o')} | ConvertTo-Json | Set-Content -LiteralPath $statePath -Encoding UTF8
+  # A successful CLI exit acknowledges a request, not a completed state change.
+  $before = Invoke-Pia -Arguments @('get','connectionstate')
+  if ($before -notin @('Disconnected','Disconnecting')) {
+   Invoke-Pia -Arguments @('disconnect') | Out-Null
+  }
+  $settled = $false
+  for ($poll = 0; $poll -lt 15; $poll++) {
+   if ((Invoke-Pia -Arguments @('get','connectionstate')) -eq 'Disconnected') { $settled = $true; break }
+   Start-Sleep -Seconds 2
+  }
+  if (-not $settled) { throw 'PIA did not finish disconnecting; region and connect requests withheld.' }
   Invoke-Pia -Arguments @('set','region',$next) | Out-Null
-  Invoke-Pia -Arguments @('connect') | Out-Null
  }
  if (-not $changed) { return }
- $deadline = [DateTime]::UtcNow.AddSeconds(120)
- do {
-  if ((Invoke-Pia -Arguments @('get','region')) -eq $next -and (Test-VpnReady) -and $null -ne (Get-ForwardedPort)) { Write-GuardLog 'VPN recovery verified'; return }
+ # Retry acknowledged connect requests only while fully Disconnected.
+ # Never issue connect during Disconnecting or interrupt Connecting.
+ $connectAttempts = 0; $nextConnectPoll = 0
+ for ($poll = 0; $poll -lt 24; $poll++) {
+  $state = Invoke-Pia -Arguments @('get','connectionstate')
+  if ($state -eq 'Disconnected' -and $connectAttempts -lt 4 -and $poll -ge $nextConnectPoll) {
+   $requested = Invoke-GuardAction 'request PIA connect' {
+    Invoke-Pia -Arguments @('connect') | Out-Null
+   }
+   if (-not $requested) { return }
+   $connectAttempts++
+   $nextConnectPoll = $poll + 3
+   Write-GuardLog "PIA connect request $connectAttempts issued; awaiting Connected state"
+  }
+  if ($state -eq 'Connected' -and (Invoke-Pia -Arguments @('get','region')) -eq $next -and (Test-VpnReady) -and $null -ne (Get-ForwardedPort)) {
+   Write-GuardLog 'VPN recovery verified'
+   return
+  }
   Start-Sleep -Seconds 5
- } while ([DateTime]::UtcNow -lt $deadline)
- throw 'VPN recovery did not become ready within 120 seconds.'
+ }
+ throw 'VPN recovery timed out after bounded polling; no verified tunnel and forwarded port. Manual reconnect may be required.'
 }
+
 function Ensure-QbtRunning {
  $processName = [string](Get-Setting 'QbtProcessName' 'qbittorrent')
  if (Get-Process -Name $processName -ErrorAction SilentlyContinue) { return $true }
