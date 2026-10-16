@@ -23,9 +23,9 @@ Describe 'qBtGuard mocked API behavior' {
         $ast = [System.Management.Automation.Language.Parser]::ParseFile($enginePath, [ref]$tokens, [ref]$errors)
         $errors.Count | Should Be 0
         $requests = @($ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.CommandAst] -and $n.GetCommandName() -in @('Invoke-WebRequest','Invoke-RestMethod') }, $true))
-        $requests.Count | Should Be 4
+        $requests.Count | Should Be 3
         foreach ($request in $requests) {
-            $request.CommandElements.Extent.Text -join ' ' | Should Match '-TimeoutSec\s+\d+'
+            $request.CommandElements.Extent.Text -join ' ' | Should Match '-TimeoutSec\s+\d+|@requestArgs'
         }
     }
 
@@ -41,7 +41,7 @@ Describe 'qBtGuard mocked API behavior' {
         Mock Invoke-WebRequest { [pscustomobject]@{ Content='Fails.' } }
         Mock Invoke-RestMethod { throw 'Torrent API should not be called after failed login' }
         { & $engineScript -InstallPath $install } | Should Throw 'qBtGuard test: audit aborted'
-        (Get-Content -LiteralPath (Join-Path $install 'qbtguard.log') -Raw) | Should Match 'ERROR: audit failed'
+        (Get-Content -LiteralPath (Join-Path $install 'qbtguard.log') -Raw) | Should Match 'ERROR: cycle failed'
         Assert-MockCalled Invoke-RestMethod -Times 0 -Exactly -Scope It
     }
 
@@ -49,7 +49,7 @@ Describe 'qBtGuard mocked API behavior' {
         Mock Invoke-WebRequest { throw 'Simulated connection refused' }
         Mock Invoke-RestMethod { throw 'Torrent API should not be called' }
         { & $engineScript -InstallPath $install } | Should Throw 'qBtGuard test: audit aborted'
-        (Get-Content -LiteralPath (Join-Path $install 'qbtguard.log') -Raw) | Should Match 'ERROR: audit failed'
+        (Get-Content -LiteralPath (Join-Path $install 'qbtguard.log') -Raw) | Should Match 'ERROR: cycle failed'
         Assert-MockCalled Invoke-RestMethod -Times 0 -Exactly -Scope It
     }
 
@@ -59,7 +59,7 @@ Describe 'qBtGuard mocked API behavior' {
         Mock Invoke-RestMethod { throw 'Should not be reached' }
         { & $engineScript -InstallPath $install } | Should Throw 'qBtGuard test: audit aborted'
         $contents = Get-Content -LiteralPath (Join-Path $install 'qbtguard.log') -Raw
-        $contents | Should Match 'ERROR: audit failed'
+        $contents | Should Match 'ERROR: cycle failed'
         $contents | Should Not Match $secret
         $contents | Should Not Match 'STACK:'
     }
@@ -68,7 +68,114 @@ Describe 'qBtGuard mocked API behavior' {
         Mock Invoke-WebRequest { [pscustomobject]@{ Content='Ok.' } }
         Mock Invoke-RestMethod { throw 'Simulated torrent API timeout' }
         { & $engineScript -InstallPath $install } | Should Throw 'qBtGuard test: audit aborted'
-        (Get-Content -LiteralPath (Join-Path $install 'qbtguard.log') -Raw) | Should Match 'ERROR: audit failed'
+        (Get-Content -LiteralPath (Join-Path $install 'qbtguard.log') -Raw) | Should Match 'ERROR: cycle failed'
         Assert-MockCalled Invoke-RestMethod -Times 1 -Exactly -Scope It
     }
+}
+
+
+Describe 'Unified engine deletion and remote controls' {
+ BeforeEach {
+  $install=Join-Path $TestDrive ([guid]::NewGuid().ToString())
+  New-Item -ItemType Directory $install | Out-Null
+  $config=@{QbtUrl='http://127.0.0.1:8080';QbtUser='test';AuditOnly=$true;BlockedExtensions=@('.exe');BlockNoExtension=$true;VerifyMkvSignatures=$true;DeleteProhibitedTorrents=$true}
+  ConvertTo-SecureString 'test-password' -AsPlainText -Force | ConvertFrom-SecureString | Set-Content (Join-Path $install 'credential.dpapi')
+  $hash='a' * 40
+  $torrent=[pscustomobject]@{hash=$hash;name='fixture';progress=0;save_path=$install;content_path=''}
+  Mock Invoke-WebRequest { [pscustomobject]@{Content='Ok.'} }
+ }
+ It 'reports a prohibited file without deletion in audit mode' {
+  $config | ConvertTo-Json | Set-Content (Join-Path $install 'config.json')
+  Mock Invoke-RestMethod { if ($Uri -match 'torrents/files') { @([pscustomobject]@{name='bad.exe';progress=0}) } elseif ($Uri -match 'torrents/info') { @($torrent) } }
+  & $engineScript -InstallPath $install
+  Assert-MockCalled Invoke-RestMethod -Times 0 -Exactly -Scope It -ParameterFilter { $Uri -match 'torrents/delete' }
+  Get-Content (Join-Path $install 'qbtguard.log') -Raw | Should Match 'WOULD delete torrent'
+ }
+ It 'deletes only the offending hash with downloaded data and verifies removal' {
+  $config.AuditOnly=$false
+  $config | ConvertTo-Json | Set-Content (Join-Path $install 'config.json')
+  $script:removed=$false
+  Mock Invoke-RestMethod {
+   if ($Uri -match 'torrents/delete') { $script:removed=$true; return }
+   if ($Uri -match 'torrents/files') { return @([pscustomobject]@{name='bad.exe';progress=0}) }
+   if ($Uri -match 'torrents/info' -and -not $script:removed) { return @($torrent) }
+   return @()
+  }
+  & $engineScript -InstallPath $install
+  Assert-MockCalled Invoke-RestMethod -Times 1 -Exactly -Scope It -ParameterFilter { $Uri -match 'torrents/delete' -and $Body.hashes -eq $hash -and $Body.deleteFiles -eq 'true' }
+  Get-Content (Join-Path $install 'qbtguard.log') -Raw | Should Match 'torrentsRemoved=1'
+ }
+ It 'does not delete when the deletion policy is disabled' {
+  $config.AuditOnly=$false; $config.DeleteProhibitedTorrents=$false
+  $config | ConvertTo-Json | Set-Content (Join-Path $install 'config.json')
+  Mock Invoke-RestMethod { if ($Uri -match 'torrents/files') { @([pscustomobject]@{name='bad.exe';progress=0}) } elseif ($Uri -match 'torrents/info') { @($torrent) } }
+  & $engineScript -InstallPath $install
+  Assert-MockCalled Invoke-RestMethod -Times 0 -Exactly -Scope It -ParameterFilter { $Uri -match 'torrents/delete' }
+ }
+ It 'blocks local VPN control when configured for a remote endpoint' {
+  $config.RemoteEndpoint=$true; $config.EnablePia=$true
+  $config | ConvertTo-Json | Set-Content (Join-Path $install 'config.json')
+  Mock Invoke-RestMethod { throw 'Must not contact API' }
+  { & $engineScript -InstallPath $install } | Should Throw
+  Assert-MockCalled Invoke-RestMethod -Times 0 -Exactly -Scope It
+ }
+ It 'rejects a string in place of the audit boolean' {
+  $config.AuditOnly='false'
+  $config | ConvertTo-Json | Set-Content (Join-Path $install 'config.json')
+  Mock Invoke-RestMethod { throw 'Must not contact API' }
+  { & $engineScript -InstallPath $install } | Should Throw
+  Assert-MockCalled Invoke-RestMethod -Times 0 -Exactly -Scope It
+ }
+}
+
+Describe 'Single torrent scope' {
+ BeforeEach {
+  $install=Join-Path $TestDrive ([guid]::NewGuid().ToString())
+  New-Item -ItemType Directory $install | Out-Null
+  $targetHash='a' * 40; $otherHash='b' * 40
+  $target=[pscustomobject]@{hash=$targetHash;name='target';progress=0;save_path=$install;content_path=''}
+  $other=[pscustomobject]@{hash=$otherHash;name='unrelated';progress=0;save_path=$install;content_path=''}
+  @{QbtUrl='http://127.0.0.1:8080';QbtUser='test';AuditOnly=$true;BlockedExtensions=@('.exe');BlockNoExtension=$true;VerifyMkvSignatures=$false;DeleteProhibitedTorrents=$true} | ConvertTo-Json | Set-Content (Join-Path $install 'config.json')
+  ConvertTo-SecureString 'test-password' -AsPlainText -Force | ConvertFrom-SecureString | Set-Content (Join-Path $install 'credential.dpapi')
+  Mock Invoke-WebRequest { [pscustomobject]@{Content='Ok.'} }
+ }
+ It 'ignores unrelated torrents even when the API ignores the hash filter' {
+  Mock Invoke-RestMethod {
+   if ($Uri -match 'torrents/info') { return @($target,$other) }
+   if ($Uri -match 'torrents/files') { return @([pscustomobject]@{name='fixture.exe';progress=0}) }
+  }
+  & $engineScript -InstallPath $install -OnlyTorrentHash $targetHash
+  Assert-MockCalled Invoke-RestMethod -Times 1 -Exactly -Scope It -ParameterFilter { $Uri -match ('torrents/files\?hash='+$targetHash) }
+  Assert-MockCalled Invoke-RestMethod -Times 0 -Exactly -Scope It -ParameterFilter { $Uri -match ('torrents/files\?hash='+$otherHash) }
+ }
+ It 'does not inspect or delete any torrent when the requested hash is absent' {
+  Mock Invoke-RestMethod { if ($Uri -match 'torrents/info') { return @($other) }; throw 'Must not scan files' }
+  & $engineScript -InstallPath $install -OnlyTorrentHash $targetHash
+  Assert-MockCalled Invoke-RestMethod -Times 0 -Exactly -Scope It -ParameterFilter { $Uri -match 'torrents/(files|delete)' }
+  Get-Content (Join-Path $install 'qbtguard.log') -Raw | Should Match 'matched=0'
+ }
+ It 'rejects malformed hashes before contacting the API' {
+  Mock Invoke-RestMethod {}
+  { & $engineScript -InstallPath $install -OnlyTorrentHash 'invalid;hash' } | Should Throw
+  Assert-MockCalled Invoke-RestMethod -Times 0 -Exactly -Scope It
+ }
+ It 'enforces deletion only for the requested torrent' {
+  $cfg=Get-Content (Join-Path $install 'config.json') -Raw | ConvertFrom-Json
+  $cfg.AuditOnly=$false
+  $cfg | ConvertTo-Json | Set-Content (Join-Path $install 'config.json')
+  $script:scopeRemoved=$false; $script:scopeInfoReads=0
+  Mock Invoke-RestMethod {
+   if ($Uri -match 'torrents/info') {
+    $script:scopeInfoReads++
+    if ($script:scopeInfoReads -eq 1) { return @($target,$other) }
+    if (-not $script:scopeRemoved) { return @($target) }
+    return @()
+   }
+   if ($Uri -match 'torrents/files') { return @([pscustomobject]@{name='fixture.exe';progress=0}) }
+   if ($Uri -match 'torrents/delete') { $script:scopeRemoved=$true }
+  }
+  & $engineScript -InstallPath $install -OnlyTorrentHash $targetHash
+  Assert-MockCalled Invoke-RestMethod -Times 1 -Exactly -Scope It -ParameterFilter { $Uri -match 'torrents/delete' -and $Body.hashes -eq $targetHash -and $Body.deleteFiles -eq 'true' }
+  Assert-MockCalled Invoke-RestMethod -Times 0 -Exactly -Scope It -ParameterFilter { $Uri -match ('torrents/files\?hash='+$otherHash) }
+ }
 }

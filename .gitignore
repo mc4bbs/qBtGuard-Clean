@@ -6,3 +6,8 @@ credential.dpapi
 *.bak
 *.zip
 .DS_Store
+
+region-state.json
+run.lock
+*password*.txt
+*alerts*.txt

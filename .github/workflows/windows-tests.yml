@@ -1,0 +1,17 @@
+name: Windows QA
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  regression:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: PowerShell 5.1 syntax and regression tests
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Get-ChildItem -Recurse -Filter *.ps1 | ForEach-Object { $tokens=$null; $errors=$null; $null=[Management.Automation.Language.Parser]::ParseFile($_.FullName,[ref]$tokens,[ref]$errors); if ($errors.Count) { throw ($errors | Out-String) } }
+          Import-Module Pester -RequiredVersion 3.4.0
+          $result = Invoke-Pester -Script ./tests -PassThru
+          if ($result.FailedCount -gt 0) { throw 'Regression tests failed.' }
