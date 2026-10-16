@@ -127,3 +127,55 @@ Describe 'Unified engine deletion and remote controls' {
   Assert-MockCalled Invoke-RestMethod -Times 0 -Exactly -Scope It
  }
 }
+
+Describe 'Single torrent scope' {
+ BeforeEach {
+  $install=Join-Path $TestDrive ([guid]::NewGuid().ToString())
+  New-Item -ItemType Directory $install | Out-Null
+  $targetHash='a' * 40; $otherHash='b' * 40
+  $target=[pscustomobject]@{hash=$targetHash;name='target';progress=0;save_path=$install;content_path=''}
+  $other=[pscustomobject]@{hash=$otherHash;name='unrelated';progress=0;save_path=$install;content_path=''}
+  @{QbtUrl='http://127.0.0.1:8080';QbtUser='test';AuditOnly=$true;BlockedExtensions=@('.exe');BlockNoExtension=$true;VerifyMkvSignatures=$false;DeleteProhibitedTorrents=$true} | ConvertTo-Json | Set-Content (Join-Path $install 'config.json')
+  ConvertTo-SecureString 'test-password' -AsPlainText -Force | ConvertFrom-SecureString | Set-Content (Join-Path $install 'credential.dpapi')
+  Mock Invoke-WebRequest { [pscustomobject]@{Content='Ok.'} }
+ }
+ It 'ignores unrelated torrents even when the API ignores the hash filter' {
+  Mock Invoke-RestMethod {
+   if ($Uri -match 'torrents/info') { return @($target,$other) }
+   if ($Uri -match 'torrents/files') { return @([pscustomobject]@{name='fixture.exe';progress=0}) }
+  }
+  & $engineScript -InstallPath $install -OnlyTorrentHash $targetHash
+  Assert-MockCalled Invoke-RestMethod -Times 1 -Exactly -Scope It -ParameterFilter { $Uri -match ('torrents/files\?hash='+$targetHash) }
+  Assert-MockCalled Invoke-RestMethod -Times 0 -Exactly -Scope It -ParameterFilter { $Uri -match ('torrents/files\?hash='+$otherHash) }
+ }
+ It 'does not inspect or delete any torrent when the requested hash is absent' {
+  Mock Invoke-RestMethod { if ($Uri -match 'torrents/info') { return @($other) }; throw 'Must not scan files' }
+  & $engineScript -InstallPath $install -OnlyTorrentHash $targetHash
+  Assert-MockCalled Invoke-RestMethod -Times 0 -Exactly -Scope It -ParameterFilter { $Uri -match 'torrents/(files|delete)' }
+  Get-Content (Join-Path $install 'qbtguard.log') -Raw | Should Match 'matched=0'
+ }
+ It 'rejects malformed hashes before contacting the API' {
+  Mock Invoke-RestMethod {}
+  { & $engineScript -InstallPath $install -OnlyTorrentHash 'invalid;hash' } | Should Throw
+  Assert-MockCalled Invoke-RestMethod -Times 0 -Exactly -Scope It
+ }
+ It 'enforces deletion only for the requested torrent' {
+  $cfg=Get-Content (Join-Path $install 'config.json') -Raw | ConvertFrom-Json
+  $cfg.AuditOnly=$false
+  $cfg | ConvertTo-Json | Set-Content (Join-Path $install 'config.json')
+  $script:scopeRemoved=$false; $script:scopeInfoReads=0
+  Mock Invoke-RestMethod {
+   if ($Uri -match 'torrents/info') {
+    $script:scopeInfoReads++
+    if ($script:scopeInfoReads -eq 1) { return @($target,$other) }
+    if (-not $script:scopeRemoved) { return @($target) }
+    return @()
+   }
+   if ($Uri -match 'torrents/files') { return @([pscustomobject]@{name='fixture.exe';progress=0}) }
+   if ($Uri -match 'torrents/delete') { $script:scopeRemoved=$true }
+  }
+  & $engineScript -InstallPath $install -OnlyTorrentHash $targetHash
+  Assert-MockCalled Invoke-RestMethod -Times 1 -Exactly -Scope It -ParameterFilter { $Uri -match 'torrents/delete' -and $Body.hashes -eq $targetHash -and $Body.deleteFiles -eq 'true' }
+  Assert-MockCalled Invoke-RestMethod -Times 0 -Exactly -Scope It -ParameterFilter { $Uri -match ('torrents/files\?hash='+$otherHash) }
+ }
+}
