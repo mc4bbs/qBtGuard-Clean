@@ -27,6 +27,7 @@
     ".zipx"
   ],
   "AuditOnly": true,
+  "QuietLogging": false,
   "IntervalMinutes": 10,
   "EnablePia": false,
   "EnableVpnRecovery": false,

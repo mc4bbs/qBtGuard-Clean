@@ -9,11 +9,24 @@ if ([string]::IsNullOrWhiteSpace($InstallPath)) { $InstallPath = Split-Path -Par
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $log = Join-Path $InstallPath 'qbtguard.log'
+$script:cycleLogged = $false
 function Write-GuardLog([string]$Message) {
  $clean = $Message -replace '[\r\n\x00-\x1f]', ' '
  Add-Content -LiteralPath $log -Value ('{0} {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $clean)
  # Logging must not contaminate boolean function return values.
+ $script:cycleLogged = $true
  Write-Host $clean
+}
+function Write-GuardCompletion([string]$Message, [bool]$Quiet = $false, [datetime]$Now = (Get-Date)) {
+ if (-not $Quiet) { Write-GuardLog $Message; return }
+ # Match the original local-calendar cutoff, not a rolling 24-hour timer.
+ $cutoff = $Now.Date.AddDays(-1).AddMinutes(1)
+ if (-not (Test-Path -LiteralPath $log) -or (Get-Item -LiteralPath $log).LastWriteTime -lt $cutoff) {
+  Write-GuardLog ("HEARTBEAT: " + $Message)
+ } else {
+  # Manual callers still see the successful summary; the disk log stays quiet.
+  Write-Host $Message
+ }
 }
 function Get-Setting([string]$Name, $Default) {
  $property = $c.PSObject.Properties[$Name]
@@ -234,7 +247,7 @@ try {
  $c = Get-Content -LiteralPath (Join-Path $InstallPath 'config.json') -Raw | ConvertFrom-Json
  $auditOnly = Get-Setting 'AuditOnly' $true
  if ($auditOnly -isnot [bool]) { throw 'AuditOnly must be a JSON boolean.' }
- foreach ($name in @('EnablePia','EnableVpnRecovery','EnablePortSync','EnableQbtRestart','DeleteProhibitedTorrents','DeleteInvalidMkvTorrents','BlockNoExtension','VerifyMkvSignatures','RemoteEndpoint')) {
+ foreach ($name in @('EnablePia','EnableVpnRecovery','EnablePortSync','EnableQbtRestart','DeleteProhibitedTorrents','DeleteInvalidMkvTorrents','BlockNoExtension','VerifyMkvSignatures','RemoteEndpoint','QuietLogging')) {
   if ((Get-Setting $name $false) -isnot [bool]) { throw "Invalid boolean setting: $name" }
  }
  $uri = [uri]([string]$c.QbtUrl)
@@ -333,7 +346,8 @@ try {
   }
  }
  $mode = 'ENFORCE'; if ($auditOnly) { $mode = 'AUDIT' }
- Write-GuardLog "$mode completed: files=$checked findings=$findings mkvChecked=$mkvChecked mkvSkipped=$mkvSkipped mkvUnreadable=$mkvUnreadable torrentsRemoved=$deleted"
+ $quietCompletion = (Get-Setting 'QuietLogging' $false) -and -not $auditOnly -and -not $OnlyTorrentHash -and $findings -eq 0 -and -not $script:cycleLogged
+ Write-GuardCompletion "$mode completed: files=$checked findings=$findings mkvChecked=$mkvChecked mkvSkipped=$mkvSkipped mkvUnreadable=$mkvUnreadable torrentsRemoved=$deleted" $quietCompletion
 } catch {
  Write-GuardLog ('ERROR: cycle failed at ' + $stage + ' (' + $_.Exception.GetType().Name + '). No successful completion recorded.')
  exit 1
