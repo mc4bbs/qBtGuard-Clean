@@ -27,5 +27,23 @@
     ".zipx"
   ],
   "AuditOnly": true,
-  "IntervalMinutes": 10
+  "QuietLogging": false,
+  "IntervalMinutes": 10,
+  "EnablePia": false,
+  "EnableVpnRecovery": false,
+  "EnablePortSync": false,
+  "EnableQbtRestart": false,
+  "DeleteProhibitedTorrents": false,
+  "DeleteInvalidMkvTorrents": false,
+  "RemoteEndpoint": false,
+  "PiaCtl": "C:\\Program Files\\Private Internet Access\\piactl.exe",
+  "VpnInterface": "",
+  "QbtExe": "C:\\Program Files\\qBittorrent\\qbittorrent.exe",
+  "QbtProcessName": "qbittorrent",
+  "QbtSettingsPath": "",
+  "PiaRegions": [
+    "bulgaria",
+    "bolivia"
+  ],
+  "RegionCooldownMinutes": 10
 }

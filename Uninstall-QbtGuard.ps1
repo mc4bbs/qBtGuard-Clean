@@ -1,9 +1,9 @@
 # qBtGuard 0.1.0-preview uninstaller. Retains installed files and logs.
 [CmdletBinding()]
-param([string]$Destination = (Join-Path $env:LOCALAPPDATA 'qBtGuard'))
+param([string]$Destination = (Join-Path $env:LOCALAPPDATA 'qBtGuard'), [string]$TaskName = 'qBtGuard Audit')
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
-$taskName = 'qBtGuard Audit'
+$taskName = $TaskName
 $task = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
 if ($task) {
     $expectedLauncher = Join-Path ([IO.Path]::GetFullPath($Destination)) 'Run-QbtGuard.vbs'
@@ -19,3 +19,4 @@ if ($task) {
 }
 if (Test-Path -LiteralPath $Destination) { Write-Host "Installation directory retained at $Destination for manual inspection/removal." }
 Write-Host 'Torrents and downloads untouched.'
+

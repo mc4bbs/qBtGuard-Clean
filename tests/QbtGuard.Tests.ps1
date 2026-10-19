@@ -89,13 +89,3 @@ Describe 'qBtGuard torrent path validation' {
     }
 }
 
-Describe 'qBtGuard read-only source safeguards' {
-    It 'contains no torrent mutation API endpoints' {
-        $source = Get-Content -LiteralPath $engine -Raw
-        $source | Should Not Match '/api/v2/torrents/(delete|add|pause|resume|recheck|renameFile|setLocation)'
-    }
-    It 'does not invoke filesystem deletion or PIA controls' {
-        $source = Get-Content -LiteralPath $engine -Raw
-        $source | Should Not Match '(?i)\b(Remove-Item|DeleteFile|Stop-Process|Start-Process|piactl)\b'
-    }
-}

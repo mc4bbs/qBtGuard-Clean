@@ -39,3 +39,4 @@ Describe 'qBtGuard uninstaller ownership safeguards' {
         Assert-MockCalled Unregister-ScheduledTask -Times 0 -Exactly -Scope It
     }
 }
+

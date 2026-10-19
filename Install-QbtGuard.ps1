@@ -1,12 +1,13 @@
-# qBtGuard 0.1.0-preview installer. Run as the intended scheduled-task Windows user.
+# qBtGuard 0.2.0 candidate installer. Run as the intended scheduled-task Windows user.
 [CmdletBinding()]
 param(
  [string]$Destination = (Join-Path $env:LOCALAPPDATA 'qBtGuard'),
- [switch]$NoTask
+ [switch]$NoTask,
+ [string]$TaskName = 'qBtGuard Audit'
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
-$taskName = 'qBtGuard Audit'
+$taskName = $TaskName
 $staging = $null
 $installed = $false
 $taskCreated = $false
@@ -26,7 +27,7 @@ try {
  if (Test-Path -LiteralPath $destinationFull) { throw "Destination already exists: $destinationFull. No changes made." }
  $parent = Split-Path -Parent $destinationFull
  if (-not (Test-Path -LiteralPath $parent -PathType Container)) { throw "Destination parent does not exist: $parent" }
- Write-Host 'qBtGuard preview: READ-ONLY. No torrent deletion or PIA changes.'
+ Write-Host 'qBtGuard candidate: audit mode by default; corrective actions require configuration and QA.'
  $url = Read-Host 'qBittorrent Web UI URL [http://127.0.0.1:8080]'
  if ([string]::IsNullOrWhiteSpace($url)) { $url = 'http://127.0.0.1:8080' }
  $uri = [uri]$url
@@ -45,11 +46,9 @@ try {
  $null = Invoke-RestMethod -Uri ($baseUrl + '/api/v2/app/version') -WebSession $session -Headers $headers -TimeoutSec 15 -ErrorAction Stop
  $null = Invoke-RestMethod -Uri ($baseUrl + '/api/v2/torrents/info') -WebSession $session -Headers $headers -TimeoutSec 30 -ErrorAction Stop
  Write-Host 'Authentication and read-only API access verified.'
- $config = [ordered]@{
-  QbtUrl=$baseUrl; QbtUser=$user; BlockNoExtension=$true; VerifyMkvSignatures=$true
-  BlockedExtensions=@('.exe','.scr','.com','.bat','.cmd','.msi','.msp','.ps1','.psm1','.vbs','.vbe','.js','.jse','.wsf','.wsh','.hta','.cpl','.pif','.lnk','.jar','.zipx')
-  AuditOnly=$true; IntervalMinutes=10
- }
+ $config = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'config.example.json') -Raw | ConvertFrom-Json
+ $config.QbtUrl = $baseUrl; $config.QbtUser = $user
+ $config.AuditOnly = $true
  $staging = Join-Path $parent ('.qBtGuard-staging-' + [guid]::NewGuid().ToString('N'))
  New-Item -ItemType Directory -Path $staging -ErrorAction Stop | Out-Null
  Copy-Item -LiteralPath $source -Destination (Join-Path $staging 'QbtGuard.ps1') -ErrorAction Stop
@@ -65,7 +64,7 @@ try {
   $trigger = New-ScheduledTaskTrigger -Daily -At (Get-Date).AddMinutes(2)
   $trigger.Repetition = New-CimInstance -Namespace 'Root/Microsoft/Windows/TaskScheduler' -ClassName 'MSFT_TaskRepetitionPattern' -ClientOnly -Property @{ Interval = 'PT10M'; Duration = 'P1D'; StopAtDurationEnd = $false }
   $principal = New-ScheduledTaskPrincipal -UserId ([Security.Principal.WindowsIdentity]::GetCurrent().Name) -LogonType Interactive -RunLevel Limited
-  $settings = New-ScheduledTaskSettingsSet -MultipleInstances IgnoreNew -ExecutionTimeLimit (New-TimeSpan -Minutes 5)
+  $settings = New-ScheduledTaskSettingsSet -MultipleInstances IgnoreNew -ExecutionTimeLimit (New-TimeSpan -Minutes 9)
   Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Description 'qBtGuard read-only audit; runs while user is logged on' -ErrorAction Stop | Out-Null
   $taskCreated = $true
  }
@@ -84,3 +83,4 @@ try {
   try { Invoke-WebRequest -Uri ($uri.AbsoluteUri.TrimEnd('/') + '/api/v2/auth/logout') -Method Post -WebSession $session -Headers $headers -UseBasicParsing -TimeoutSec 10 -ErrorAction Stop | Out-Null } catch {}
  }
 }
+
