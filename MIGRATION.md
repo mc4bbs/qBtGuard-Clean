@@ -1,6 +1,6 @@
 # Consolidation and enforcement QA
 
-This procedure is for anyone replacing older qBittorrent/PIA scripts. No production changes have been performed by this branch.
+This procedure is for anyone replacing older qBittorrent/PIA scripts. The pilot installation completed a manual cutover; the installer itself never modifies or disables other installations.
 
 1. Inventory all tasks and startup launchers targeting qBittorrent or PIA. Record their accounts, paths, intervals, current configuration and capabilities. Back up task XML, scripts, credentials and persistent state privately.
 2. Install this candidate into a new directory with `-NoTask`. Retain the old working installation. Configure the candidate for the actual machine and VPN adapter; keep audit mode enabled. Do not reuse another Windows user's DPAPI credential.
@@ -12,3 +12,9 @@ This procedure is for anyone replacing older qBittorrent/PIA scripts. No product
 8. For rollback, disable and stop the new task/run before re-enabling the old task. Restore old configuration/state if altered. Deleted torrent data is irreversible through this script; recover from independent backups if available.
 
 Keep audit mode on and existing production protection in place until the candidate clears QA. The old deletion script may remain enforced during read-only comparison; never leave both enforcement engines scheduled after cutover.
+
+## Retiring the old installation
+
+After a successful observation period, export the current replacement task and preserve the old task XML, scripts, configuration, DPAPI files and state privately. Confirm the replacement task action points to the installation being retained. Remove only verified, disabled legacy task definitions; archive their script directories instead of deleting backups. Search task actions and startup launchers again for references to the archived paths. Never move the active installation without updating and verifying its task action. A directory with QA in its name can remain the production installation; renaming it is not required.
+
+Keep rollback data tied to the original Windows account and machine. Do not publish credentials, personal configuration, logs or task exports to GitHub.
