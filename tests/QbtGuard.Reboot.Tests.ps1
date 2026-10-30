@@ -74,6 +74,13 @@ Describe 'Sustained VPN outage reboot fallback' {
   Update-VpnWatchdog $false $false $now | Should Be $false
   (Get-Content $path -Raw | ConvertFrom-Json).FailedRecoveries | Should Be 2
  }
+ It 'preserves fractional boot timestamps across JSON round trips' {
+  $script:boot=$now.AddHours(-2).AddTicks(1234567)
+  Set-OutageFixture
+  Update-VpnWatchdog $false $true $now | Should Be $true
+  Update-VpnWatchdog $false $true $now.AddMinutes(10) | Should Be $false
+  Assert-MockCalled Invoke-SystemReboot -Times 1 -Exactly -Scope It
+ }
  It 'persists the reboot attempt before invoking Windows' {
   Set-OutageFixture
   Mock Invoke-SystemReboot {

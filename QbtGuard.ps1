@@ -238,7 +238,11 @@ function Update-VpnWatchdog([bool]$Healthy, [bool]$RecoveryFailed = $false, [Dat
       $state.FailedRecoveries -lt 0 -or $state.FailedRecoveries -gt 1000000) { throw 'Invalid VPN watchdog state; reboot blocked.' }
   foreach ($key in @('FirstFailureUtc','LastFailureUtc','FailureBootUtc','LastRebootAttemptUtc','LastRebootBootUtc')) {
    if ($null -ne $state.$key) {
-    $parsed = [DateTimeOffset]::Parse([string]$state.$key)
+    # Windows PowerShell may deserialize ISO timestamps as DateTime objects.
+    # Preserve Kind and subsecond boot precision before comparing/persisting.
+    if ($state.$key -is [datetime] -or $state.$key -is [DateTimeOffset]) { $parsed = ([DateTimeOffset]$state.$key).ToUniversalTime() }
+    else { $parsed = [DateTimeOffset]::Parse([string]$state.$key).ToUniversalTime() }
+    $state.$key = $parsed.ToString('o')
     if ($parsed -gt $Now) { throw 'Future VPN watchdog timestamp; reboot blocked.' }
    }
   }
