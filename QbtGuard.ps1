@@ -260,6 +260,7 @@ function Update-VpnWatchdog([bool]$Healthy, [bool]$RecoveryFailed = $false, [Dat
  }
  # Missing observations or a new boot start a fresh outage window.
  $maxGap = [Math]::Max(30, 3 * [int](Get-Setting 'RegionCooldownMinutes' 10))
+ Write-Host ('DEBUG boot={0} saved={1} last={2} now={3} gap={4} max={5} equal={6}' -f $boot.ToString('o'),$state.FailureBootUtc,$state.LastFailureUtc,$Now.ToString('o'),($Now - [DateTimeOffset]::Parse($state.LastFailureUtc)).TotalMinutes,$maxGap,([DateTimeOffset]::Parse([string]$state.FailureBootUtc) -eq $boot))
  if ((-not $state.FailureBootUtc -or [DateTimeOffset]::Parse([string]$state.FailureBootUtc) -ne $boot) -or ($state.LastFailureUtc -and ($Now - [DateTimeOffset]::Parse($state.LastFailureUtc)).TotalMinutes -gt $maxGap)) {
   $state.FirstFailureUtc=$null; $state.LastFailureUtc=$null; $state.FailedRecoveries=0; $state.FailureBootUtc=$bootId
  }
