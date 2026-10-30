@@ -7,7 +7,9 @@ function Write-GuardLog { param($Message) }
 function Invoke-Pia { param($Arguments) }
 function Test-VpnReady {}
 function Invoke-VpnRecovery {}
-  foreach ($name in @('Get-Setting','Invoke-GuardAction','Get-RebootPolicy','Get-GuardBootUtc','Save-VpnWatchdogState','Invoke-SystemReboot','Update-VpnWatchdog','Invoke-GuardVpnCycle')) {
+# Never load the native reboot body into the test session, even if mock setup fails.
+function Invoke-SystemReboot { throw 'Native shutdown must be mocked in tests.' }
+  foreach ($name in @('Get-Setting','Invoke-GuardAction','Get-RebootPolicy','Get-GuardBootUtc','Save-VpnWatchdogState','Update-VpnWatchdog','Invoke-GuardVpnCycle')) {
    $definition=$ast.FindAll({param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq $name},$true) | Select-Object -First 1
    . ([scriptblock]::Create($definition.Extent.Text))
   }
