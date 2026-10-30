@@ -195,7 +195,7 @@ function Save-VpnWatchdogState($State) {
  $temp = $path + '.' + [guid]::NewGuid().ToString('N') + '.tmp'
  try {
   [IO.File]::WriteAllText($temp, ($State | ConvertTo-Json -Depth 4), (New-Object Text.UTF8Encoding($false)))
-  if (Test-Path -LiteralPath $path) { [IO.File]::Replace($temp,$path,$null) }
+  if (Test-Path -LiteralPath $path) { [IO.File]::Replace($temp,$path,($path + '.previous')) }
   else { [IO.File]::Move($temp,$path) }
  } finally {
   if (Test-Path -LiteralPath $temp) { Remove-Item -LiteralPath $temp -Force -ErrorAction SilentlyContinue }

@@ -22,7 +22,7 @@ Describe 'Sustained VPN outage reboot fallback' {
   $c=[pscustomobject]@{EnableVpnReboot=$true;EnablePia=$true;EnableVpnRecovery=$true;RemoteEndpoint=$false;RegionCooldownMinutes=10}
   Mock Get-GuardBootUtc { $script:boot }
   Mock Invoke-SystemReboot {}
-  Mock Write-GuardLog {}
+  Mock Write-GuardLog { Write-Host $Message }
   Mock Invoke-Pia { 'Connecting' }
   Mock Test-VpnReady { $false }
   Mock Invoke-VpnRecovery { $script:vpnRecoveryAttempted=$true; throw 'VPN timeout fixture' }
