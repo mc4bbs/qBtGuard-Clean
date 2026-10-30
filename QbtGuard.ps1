@@ -256,7 +256,7 @@ function Update-VpnWatchdog([bool]$Healthy, [bool]$RecoveryFailed = $false, [Dat
  }
  # Missing observations or a new boot start a fresh outage window.
  $maxGap = [Math]::Max(30, 3 * [int](Get-Setting 'RegionCooldownMinutes' 10))
- if ($state.FailureBootUtc -ne $bootId -or ($state.LastFailureUtc -and ($Now - [DateTimeOffset]::Parse($state.LastFailureUtc)).TotalMinutes -gt $maxGap)) {
+ if ((-not $state.FailureBootUtc -or [DateTimeOffset]::Parse([string]$state.FailureBootUtc) -ne $boot) -or ($state.LastFailureUtc -and ($Now - [DateTimeOffset]::Parse($state.LastFailureUtc)).TotalMinutes -gt $maxGap)) {
   $state.FirstFailureUtc=$null; $state.LastFailureUtc=$null; $state.FailedRecoveries=0; $state.FailureBootUtc=$bootId
  }
  if (-not $state.FirstFailureUtc) { $state.FirstFailureUtc=$Now.ToString('o') }
@@ -289,7 +289,7 @@ function Invoke-GuardVpnCycle {
  try {
   Invoke-VpnRecovery
   if (-not (Test-VpnReady)) { throw 'VPN and configured interface not ready; cycle blocked.' }
-  try { Update-VpnWatchdog -Healthy $true | Out-Null }
+  try { Update-VpnWatchdog -Healthy $true -Now ([DateTimeOffset]::UtcNow) | Out-Null }
   catch { Write-GuardLog ('NOTICE VPN reboot withheld: watchdog check failed (' + $_.Exception.GetType().Name + ')') }
  } catch {
   $failure = $_
@@ -298,9 +298,9 @@ function Invoke-GuardVpnCycle {
   if (Get-Setting 'EnableVpnReboot' $false) {
    try {
     $observed = Invoke-Pia -Arguments @('get','connectionstate')
-    if ($observed -eq 'Connected') { Update-VpnWatchdog -Healthy $true | Out-Null }
+    if ($observed -eq 'Connected') { Update-VpnWatchdog -Healthy $true -Now ([DateTimeOffset]::UtcNow) | Out-Null }
     elseif ($observed -in @('Disconnected','Connecting','Disconnecting','Reconnecting')) {
-     Update-VpnWatchdog -Healthy $false -RecoveryFailed $script:vpnRecoveryAttempted | Out-Null
+     Update-VpnWatchdog -Healthy $false -RecoveryFailed $script:vpnRecoveryAttempted -Now ([DateTimeOffset]::UtcNow) | Out-Null
     } else { Write-GuardLog 'NOTICE VPN reboot withheld: connection state unknown' }
    } catch {
     Write-GuardLog ('NOTICE VPN reboot withheld: watchdog check failed (' + $_.Exception.GetType().Name + ')')
