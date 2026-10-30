@@ -80,3 +80,23 @@ Use `QbtGuard.ps1 -OnlyTorrentHash <hash>` to restrict file inspection and torre
 `QuietLogging` defaults to false. When enabled, an unscoped enforcement cycle with no findings or other log messages prints its completion summary to the console without appending it to disk. It writes a `HEARTBEAT` with the summary when the log is missing or was last modified before 00:01 on the previous local calendar day. This inherited rule can yield a heartbeat every other day; it is not a once-per-day timer. Audit runs, scoped QA, findings, actions, notices and failures retain normal logging. The heartbeat runs only after a successful cycle; it is not proof that skipped MKVs were inspected.
 
 Live QA on the initial Windows/qBittorrent 4.3.6 system demonstrated guarded restart, forwarded-port synchronization, unattended recovery with the revised retry logic, and scoped deletion of prohibited-extension, extensionless and invalid-header MKV fixture torrents. Each successful deletion fixture also had both downloaded files verified absent. The first recovery attempt required manual assistance; the revised recovery test completed without it. A first extensionless fixture had unresolved location/completion issues; the repeated test used a verified 100% complete fixture. These observations do not establish clean-machine portability or full MKV integrity checking. The pilot was subsequently cut over to one enforcement task; the previous tasks were disabled and rollback files retained. See [QA.md](QA.md).
+
+### Optional reboot escalation after a sustained VPN outage
+
+Version 0.2.1 candidate adds `EnableVpnReboot` (default false). It requires local PIA integration and normal VPN recovery to be enabled. Existing configurations retain their behavior until this policy is explicitly enabled.
+
+The defaults require at least 30 minutes of observed disconnected/transitional PIA state and three failed recovery attempts. Cooldown-only cycles do not increment the attempt count. Successful readiness clears outage counters; unknown CLI state, authentication errors, file-scan failures, and connected forwarding-only failures cannot advance reboot escalation. A fresh PIA state check must still show Disconnected, Connecting, Disconnecting or Reconnecting immediately before requesting a restart. This is an observed-state watchdog, not an independent Internet-connectivity test.
+
+| Setting | Default |
+|---|---|
+| `EnableVpnReboot` | false |
+| `VpnRebootAfterMinutes` | 30 |
+| `VpnRebootAfterFailedRecoveries` | 3 |
+| `VpnRebootStartupGraceMinutes` | 15 |
+| `VpnRebootMinimumIntervalMinutes` | 1440 (24 hours) |
+
+`vpn-watchdog-state.json` is atomically persisted under the installation lock. Reboot history survives successful cycles and system restarts. At most one attempt is made per boot and per configured minimum interval, including attempts rejected by Windows. A new boot or a gap of more than max(30, three recovery-cooldown intervals) minutes starts fresh outage tracking. Corrupt or future-dated state blocks reboot and logs a diagnostic. Do not delete this file to troubleshoot ordinary connection issues: doing so removes reboot history.
+
+Audit mode and `-OnlyTorrentHash` runs never persist reboot/outage state or restart Windows. Audit mode can report a proposed restart when existing state already meets the thresholds. A reboot request uses Windows shutdown.exe with `/r /t 0` and no `/f`; applications can block the restart. Windows treats positive shutdown timeouts as implying forced application termination, so no positive timeout is used. The task account needs the local shutdown user right; rejection is logged and does not cause an immediate retry loop.
+
+The feature restores the computer, not its applications: arrange user sign-in and your own startup sequence separately. qBtGuard's interactive scheduled task does not run before its Windows user signs in. The startup grace period prevents reboot escalation during the first 15 minutes, but normal PIA recovery remains active. No automatic sign-in credentials are installed by qBtGuard. New reboot behavior requires Windows QA with the shutdown call mocked before it is enabled on a live installation.
