@@ -131,6 +131,7 @@ function Invoke-VpnRecovery {
  $index = [Array]::IndexOf($regions, $current)
  $next = [string]$regions[(($index + 1) % $regions.Count)]
  $changed = Invoke-GuardAction "prepare PIA region recovery to $next" {
+  $script:vpnRecoveryAttempted = $true
   @{LastAttemptUtc=[DateTimeOffset]::UtcNow.ToString('o')} | ConvertTo-Json | Set-Content -LiteralPath $statePath -Encoding UTF8
   # A successful CLI exit acknowledges a request, not a completed state change.
   $before = Invoke-Pia -Arguments @('get','connectionstate')
@@ -142,7 +143,7 @@ function Invoke-VpnRecovery {
    if ((Invoke-Pia -Arguments @('get','connectionstate')) -eq 'Disconnected') { $settled = $true; break }
    Start-Sleep -Seconds 2
   }
-  if (-not $settled) { throw 'PIA did not finish disconnecting; region and connect requests withheld.' }
+  if (-not $settled) { Write-GuardLog 'VPN recovery failed: disconnect did not settle within 30 seconds'; throw 'PIA did not finish disconnecting; region and connect requests withheld.' }
   Invoke-Pia -Arguments @('set','region',$next) | Out-Null
  }
  if (-not $changed) { return }
@@ -166,7 +167,159 @@ function Invoke-VpnRecovery {
   }
   Start-Sleep -Seconds 5
  }
+ Write-GuardLog ("VPN recovery failed: target=$next lastState=$state connectRequests=$connectAttempts; bounded polling exhausted")
  throw 'VPN recovery timed out after bounded polling; no verified tunnel and forwarded port. Manual reconnect may be required.'
+}
+
+
+function Get-RebootPolicy {
+ $values = @{}
+ foreach ($spec in @(
+  @('VpnRebootAfterMinutes',30,10,1440),
+  @('VpnRebootAfterFailedRecoveries',3,2,100),
+  @('VpnRebootStartupGraceMinutes',15,5,120),
+  @('VpnRebootMinimumIntervalMinutes',1440,60,10080)
+ )) {
+  $v = Get-Setting $spec[0] $spec[1]
+  if (($v -isnot [int] -and $v -isnot [long]) -or $v -lt $spec[2] -or $v -gt $spec[3]) { throw ('Invalid reboot policy: ' + $spec[0]) }
+  $values[$spec[0]] = [int]$v
+ }
+ return $values
+}
+function Get-GuardBootUtc {
+ $os = Get-CimInstance -ClassName Win32_OperatingSystem -ErrorAction Stop
+ return ([DateTimeOffset]$os.LastBootUpTime).ToUniversalTime()
+}
+function Save-VpnWatchdogState($State) {
+ $path = Join-Path $InstallPath 'vpn-watchdog-state.json'
+ $temp = $path + '.' + [guid]::NewGuid().ToString('N') + '.tmp'
+ try {
+  [IO.File]::WriteAllText($temp, ($State | ConvertTo-Json -Depth 4), (New-Object Text.UTF8Encoding($false)))
+  if (Test-Path -LiteralPath $path) { [IO.File]::Replace($temp,$path,($path + '.previous')) }
+  else { [IO.File]::Move($temp,$path) }
+ } finally {
+  if (Test-Path -LiteralPath $temp) { Remove-Item -LiteralPath $temp -Force -ErrorAction SilentlyContinue }
+ }
+}
+function Invoke-SystemReboot {
+ # A positive shutdown timeout implies /f on Windows. Use zero, without /f:
+ # applications may block the restart instead of being forcibly terminated.
+ $si = New-Object Diagnostics.ProcessStartInfo
+ $si.FileName = Join-Path $env:WINDIR 'System32\shutdown.exe'
+ $si.Arguments = '/r /t 0 /d p:0:0 /c "qBtGuard: sustained VPN recovery failure"'
+ $si.UseShellExecute = $false; $si.CreateNoWindow = $true
+ $si.RedirectStandardOutput = $true; $si.RedirectStandardError = $true
+ $process = New-Object Diagnostics.Process
+ $process.StartInfo = $si
+ try {
+  if (-not $process.Start()) { throw 'Restart command did not start.' }
+  $stdout = $process.StandardOutput.ReadToEndAsync()
+  $stderr = $process.StandardError.ReadToEndAsync()
+  if (-not $process.WaitForExit(10000)) { $process.Kill(); throw 'Restart command timed out.' }
+  if ($process.ExitCode -ne 0) {
+   $detail = (($stderr.Result + ' ' + $stdout.Result) -replace '[\r\n\x00-\x1f]', ' ').Trim()
+   if ($detail.Length -gt 400) { $detail = $detail.Substring(0,400) }
+   Write-GuardLog ("REBOOT FAILED: shutdown.exe exitCode=" + $process.ExitCode + " detail=" + $detail)
+   throw 'Restart command was rejected.'
+  }
+ } catch {
+  Write-GuardLog ('REBOOT ERROR: ' + $_.Exception.GetType().Name + ': ' + $_.Exception.Message)
+  throw
+ } finally { $process.Dispose() }
+}
+function Update-VpnWatchdog([bool]$Healthy, [bool]$RecoveryFailed = $false, [DateTimeOffset]$Now = [DateTimeOffset]::UtcNow) {
+ if (-not (Get-Setting 'EnableVpnReboot' $false) -or -not (Get-Setting 'EnablePia' $false) -or
+     -not (Get-Setting 'EnableVpnRecovery' $false) -or (Get-Setting 'RemoteEndpoint' $false) -or $OnlyTorrentHash) { return $false }
+ $policy = Get-RebootPolicy
+ $boot = Get-GuardBootUtc
+ if ($boot -gt $Now) { throw 'Boot time is in the future; reboot blocked.' }
+ $bootId = $boot.ToString('o')
+ $path = Join-Path $InstallPath 'vpn-watchdog-state.json'
+ $state = [pscustomobject]@{Version=1;FirstFailureUtc=$null;LastFailureUtc=$null;FailedRecoveries=0;FailureBootUtc=$bootId;LastRebootAttemptUtc=$null;LastRebootBootUtc=$null}
+ if (Test-Path -LiteralPath $path) {
+  $state = Get-Content -LiteralPath $path -Raw -ErrorAction Stop | ConvertFrom-Json
+  foreach ($key in @('Version','FirstFailureUtc','LastFailureUtc','FailedRecoveries','FailureBootUtc','LastRebootAttemptUtc','LastRebootBootUtc')) {
+   if ($null -eq $state.PSObject.Properties[$key]) { throw 'Incomplete VPN watchdog state; reboot blocked.' }
+  }
+  if ($state.Version -isnot [int] -or $state.Version -ne 1 -or
+      ($state.FailedRecoveries -isnot [int] -and $state.FailedRecoveries -isnot [long]) -or
+      $state.FailedRecoveries -lt 0 -or $state.FailedRecoveries -gt 1000000) { throw 'Invalid VPN watchdog state; reboot blocked.' }
+  foreach ($key in @('FirstFailureUtc','LastFailureUtc','FailureBootUtc','LastRebootAttemptUtc','LastRebootBootUtc')) {
+   if ($null -ne $state.$key) {
+    # Windows PowerShell may deserialize ISO timestamps as DateTime objects.
+    # Preserve Kind and subsecond boot precision before comparing/persisting.
+    if ($state.$key -is [datetime] -or $state.$key -is [DateTimeOffset]) { $parsed = ([DateTimeOffset]$state.$key).ToUniversalTime() }
+    else { $parsed = [DateTimeOffset]::Parse([string]$state.$key).ToUniversalTime() }
+    $state.$key = $parsed.ToString('o')
+    if ($parsed -gt $Now) { throw 'Future VPN watchdog timestamp; reboot blocked.' }
+   }
+  }
+  if (($null -eq $state.FirstFailureUtc) -ne ($null -eq $state.LastFailureUtc) -or
+      ($state.FirstFailureUtc -and [DateTimeOffset]::Parse($state.FirstFailureUtc) -gt [DateTimeOffset]::Parse($state.LastFailureUtc)) -or
+      (($null -eq $state.LastRebootAttemptUtc) -ne ($null -eq $state.LastRebootBootUtc))) { throw 'Inconsistent VPN watchdog state; reboot blocked.' }
+ }
+ if ($Healthy) {
+  if ($state.FirstFailureUtc -or $state.FailedRecoveries -gt 0) {
+   $state.FirstFailureUtc=$null; $state.LastFailureUtc=$null; $state.FailedRecoveries=0; $state.FailureBootUtc=$bootId
+   if (-not $auditOnly) { Save-VpnWatchdogState $state }
+   Write-GuardLog 'NOTICE VPN watchdog outage cleared; reboot history retained'
+  }
+  return $false
+ }
+ # Missing observations or a new boot start a fresh outage window.
+ $maxGap = [Math]::Max(30, 3 * [int](Get-Setting 'RegionCooldownMinutes' 10))
+ if ((-not $state.FailureBootUtc -or [DateTimeOffset]::Parse([string]$state.FailureBootUtc) -ne $boot) -or ($state.LastFailureUtc -and ($Now - [DateTimeOffset]::Parse($state.LastFailureUtc)).TotalMinutes -gt $maxGap)) {
+  $state.FirstFailureUtc=$null; $state.LastFailureUtc=$null; $state.FailedRecoveries=0; $state.FailureBootUtc=$bootId
+ }
+ if (-not $state.FirstFailureUtc) { $state.FirstFailureUtc=$Now.ToString('o') }
+ $state.LastFailureUtc=$Now.ToString('o')
+ if ($RecoveryFailed) { $state.FailedRecoveries++ }
+ if (-not $auditOnly) { Save-VpnWatchdogState $state }
+ $minutes = ($Now - [DateTimeOffset]::Parse($state.FirstFailureUtc)).TotalMinutes
+ Write-GuardLog ('NOTICE VPN watchdog: outageMinutes={0} failedRecoveries={1}' -f [int][Math]::Floor($minutes),$state.FailedRecoveries)
+ if (($Now - $boot).TotalMinutes -lt $policy.VpnRebootStartupGraceMinutes) { Write-GuardLog 'NOTICE VPN reboot startup grace active'; return $false }
+ if ($minutes -lt $policy.VpnRebootAfterMinutes -or $state.FailedRecoveries -lt $policy.VpnRebootAfterFailedRecoveries) { return $false }
+ if ($state.LastRebootBootUtc -and [DateTimeOffset]::Parse($state.LastRebootBootUtc) -eq $boot) {
+  Write-GuardLog 'NOTICE VPN reboot already attempted this boot; manual intervention required'; return $false
+ }
+ if ($state.LastRebootAttemptUtc -and ($Now - [DateTimeOffset]::Parse($state.LastRebootAttemptUtc)).TotalMinutes -lt $policy.VpnRebootMinimumIntervalMinutes) {
+  Write-GuardLog 'NOTICE VPN reboot minimum interval active; manual intervention may be required'; return $false
+ }
+ return (Invoke-GuardAction 'request computer restart after sustained VPN recovery failure' {
+  # Recheck PIA immediately before committing the reboot attempt.
+  $fresh = Invoke-Pia -Arguments @('get','connectionstate')
+  if ($fresh -notin @('Disconnected','Connecting','Disconnecting','Reconnecting')) { throw 'PIA state changed or is unknown; reboot withheld.' }
+  $state.LastRebootAttemptUtc=$Now.ToString('o'); $state.LastRebootBootUtc=$bootId
+  # Persist before requesting reboot; rejected/blocked requests remain rate limited.
+  Save-VpnWatchdogState $state
+  Write-GuardLog 'NOTICE requesting Windows restart for VPN recovery; attempt persisted; applications may block restart'
+  Invoke-SystemReboot
+ })
+}
+function Invoke-GuardVpnCycle {
+ $script:vpnRecoveryAttempted = $false
+ try {
+  Invoke-VpnRecovery
+  if (-not (Test-VpnReady)) { throw 'VPN and configured interface not ready; cycle blocked.' }
+  try { Update-VpnWatchdog -Healthy $true -Now ([DateTimeOffset]::UtcNow) | Out-Null }
+  catch { Write-GuardLog ('NOTICE VPN reboot withheld: watchdog check failed (' + $_.Exception.GetType().Name + ')') }
+ } catch {
+  $failure = $_
+  # Only an explicitly disconnected/transitional PIA state can advance reboot
+  # escalation. API/file/configuration failures and unknown CLI state cannot.
+  if (Get-Setting 'EnableVpnReboot' $false) {
+   try {
+    $observed = Invoke-Pia -Arguments @('get','connectionstate')
+    if ($observed -eq 'Connected') { Update-VpnWatchdog -Healthy $true -Now ([DateTimeOffset]::UtcNow) | Out-Null }
+    elseif ($observed -in @('Disconnected','Connecting','Disconnecting','Reconnecting')) {
+     Update-VpnWatchdog -Healthy $false -RecoveryFailed $script:vpnRecoveryAttempted -Now ([DateTimeOffset]::UtcNow) | Out-Null
+    } else { Write-GuardLog 'NOTICE VPN reboot withheld: connection state unknown' }
+   } catch {
+    Write-GuardLog ('NOTICE VPN reboot withheld: watchdog check failed (' + $_.Exception.GetType().Name + ')')
+   }
+  }
+  throw $failure
+ }
 }
 
 function Ensure-QbtRunning {
@@ -247,7 +400,7 @@ try {
  $c = Get-Content -LiteralPath (Join-Path $InstallPath 'config.json') -Raw | ConvertFrom-Json
  $auditOnly = Get-Setting 'AuditOnly' $true
  if ($auditOnly -isnot [bool]) { throw 'AuditOnly must be a JSON boolean.' }
- foreach ($name in @('EnablePia','EnableVpnRecovery','EnablePortSync','EnableQbtRestart','DeleteProhibitedTorrents','DeleteInvalidMkvTorrents','BlockNoExtension','VerifyMkvSignatures','RemoteEndpoint','QuietLogging')) {
+ foreach ($name in @('EnablePia','EnableVpnRecovery','EnablePortSync','EnableQbtRestart','DeleteProhibitedTorrents','DeleteInvalidMkvTorrents','BlockNoExtension','VerifyMkvSignatures','RemoteEndpoint','QuietLogging','EnableVpnReboot')) {
   if ((Get-Setting $name $false) -isnot [bool]) { throw "Invalid boolean setting: $name" }
  }
  $uri = [uri]([string]$c.QbtUrl)
@@ -258,11 +411,14 @@ try {
  if ($remote -and ($piaEnabled -or (Get-Setting 'EnableQbtRestart' $false))) { throw 'Remote endpoint cannot use local PIA or watchdog controls.' }
  if ((Get-Setting 'EnableQbtRestart' $false) -and -not $piaEnabled) { throw 'Restart requires PIA integration.' }
  if (-not $piaEnabled -and ((Get-Setting 'EnableVpnRecovery' $false) -or (Get-Setting 'EnablePortSync' $false))) { throw 'VPN recovery and port sync require PIA integration.' }
+ if (Get-Setting 'EnableVpnReboot' $false) {
+  if (-not $piaEnabled -or -not (Get-Setting 'EnableVpnRecovery' $false) -or $remote) { throw 'VPN reboot requires local PIA integration and VPN recovery.' }
+  $null = Get-RebootPolicy
+ }
  if ($piaEnabled) {
   $stage = 'VPN'
   if (-not (Test-LocalEndpoint $uri)) { throw 'PIA endpoint must resolve exclusively to this computer.' }
-  Invoke-VpnRecovery
-  if (-not (Test-VpnReady)) { throw 'VPN and configured interface not ready; cycle blocked.' }
+  Invoke-GuardVpnCycle
   if (-not (Ensure-QbtRunning)) { return }
  }
  $stage = 'authentication'

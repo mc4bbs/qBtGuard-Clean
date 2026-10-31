@@ -45,5 +45,10 @@
     "bulgaria",
     "bolivia"
   ],
-  "RegionCooldownMinutes": 10
+  "RegionCooldownMinutes": 10,
+  "EnableVpnReboot": false,
+  "VpnRebootAfterMinutes": 30,
+  "VpnRebootAfterFailedRecoveries": 3,
+  "VpnRebootStartupGraceMinutes": 15,
+  "VpnRebootMinimumIntervalMinutes": 1440
 }
