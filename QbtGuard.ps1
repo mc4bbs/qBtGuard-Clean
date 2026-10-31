@@ -216,7 +216,15 @@ function Invoke-SystemReboot {
   $stdout = $process.StandardOutput.ReadToEndAsync()
   $stderr = $process.StandardError.ReadToEndAsync()
   if (-not $process.WaitForExit(10000)) { $process.Kill(); throw 'Restart command timed out.' }
-  if ($process.ExitCode -ne 0) { throw 'Restart command was rejected.' }
+  if ($process.ExitCode -ne 0) {
+   $detail = (($stderr.Result + ' ' + $stdout.Result) -replace '[\r\n\x00-\x1f]', ' ').Trim()
+   if ($detail.Length -gt 400) { $detail = $detail.Substring(0,400) }
+   Write-GuardLog ("REBOOT FAILED: shutdown.exe exitCode=" + $process.ExitCode + " detail=" + $detail)
+   throw 'Restart command was rejected.'
+  }
+ } catch {
+  Write-GuardLog ('REBOOT ERROR: ' + $_.Exception.GetType().Name + ': ' + $_.Exception.Message)
+  throw
  } finally { $process.Dispose() }
 }
 function Update-VpnWatchdog([bool]$Healthy, [bool]$RecoveryFailed = $false, [DateTimeOffset]$Now = [DateTimeOffset]::UtcNow) {
